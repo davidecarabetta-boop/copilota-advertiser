@@ -1,0 +1,3 @@
+account_id,enhanced_conversions,capi_active,capi_coverage_pct,consent_mode_v2,consent_rate_pct,consent_rate_prev_pct,optimization_event,crm_quality_feedback,customer_match_updated
+1000000001,true,,,true,72,74,lead_form,true,2026-11-10
+act_1000000002,,true,65,,,,lead,true,2026-09-01

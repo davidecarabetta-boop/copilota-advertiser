@@ -5,7 +5,7 @@
 | 00 Setup e accessi | In corso | Fatto: classificazione strumenti MCP, `deny` scritture Meta, scheletro repo, `scripts/smoke_test.py`, config pilota Rattix. Manca: developer token Standard, OAuth Google, utente di sistema Meta, progetto GCP, `.env`, smoke test verde |
 | 00b Prototipo in chat con MCP ufficiali | – | In parallelo alla 01. Skill + MCP in sola lettura sui clienti pilota, calibrazione soglie |
 | 01 Dati in BigQuery | – | |
-| 02 Segnali | – | |
+| 02 Segnali | In corso (su dati di test) | Fatto: `src/copilota/signals.py` (7 controlli + `gate` + testo ticket), lettore unico `data.py` (CSV ora, BigQuery in fase 01), dati finti in `data/sample/` generati da `scripts/make_sample_data.py`, prova con `scripts/run_signals.py`. Manca: valore/margine e nuovi clienti, tabella `signals_daily`, verifica su dati reali con un analista senior |
 | 03 Analisi Google, Meta, Creatività | – | |
 | 03b Post-click: pertinenza LP e CRO | – | Richiede export GA4 in BigQuery del cliente |
 | 04 Misurazione | – | |
@@ -30,6 +30,7 @@
 - 2026-11-22: BigQuery su un nuovo progetto GCP dedicato.
 - 2026-11-22: accesso all'interfaccia con Google Workspace SSO.
 - 2026-11-22: cliente pilota = Rattix (Ratti Auto).
+- 2026-11-22: in attesa delle credenziali si sviluppa su dati di test scritti a mano (`data/sample/`, account finto DEMO). Il codice legge solo tramite `DataSource`, quindi il passaggio a BigQuery non tocca la logica. Aggiunte in `soglie.yaml` le soglie rosse di riconciliazione (30%, 2x) e la finestra di 30 giorni.
 
 ## Decisioni aperte
 - Scrittura Google Ads in fase 08: connettore ufficiale solo lettura → API diretta con hook propri, o aspettare un MCP che scriva?

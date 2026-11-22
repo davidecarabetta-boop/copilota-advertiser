@@ -2,7 +2,10 @@
 # (sovrascrivibili per cliente in config/clienti/<cliente>.yaml).
 
 segnali:
-  scarto_max_piattaforma_vs_backend_pct: 10
+  scarto_max_piattaforma_vs_backend_pct: 10       # oltre: giallo
+  scarto_rosso_piattaforma_vs_backend_pct: 30     # oltre: rosso
+  rapporto_rosso_piattaforma_su_backend: 2        # piattaforma >= 2x backend: deduplica rotta, rosso
+  finestra_riconciliazione_giorni: 30
   copertura_capi_min_pct: 80
   calo_consenso_alert_punti: 10
   customer_match_max_giorni: 30
