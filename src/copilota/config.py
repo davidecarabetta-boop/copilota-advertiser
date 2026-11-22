@@ -15,6 +15,14 @@ def _merge(base: dict, override: dict) -> dict:
     return out
 
 
+def load_client(client: str | None, config_dir: Path = CONFIG_DIR) -> dict[str, Any]:
+    """Il file config/clienti/<client>.yaml, o {} se non c'è."""
+    if not client:
+        return {}
+    f = config_dir / "clienti" / f"{client.lower()}.yaml"
+    return (yaml.safe_load(f.read_text(encoding="utf-8")) or {}) if f.exists() else {}
+
+
 def load_thresholds(client: str | None = None, config_dir: Path = CONFIG_DIR) -> dict[str, Any]:
     """Soglie da soglie.yaml; la sezione `soglie` di config/clienti/<client>.yaml le sovrascrive."""
     base = yaml.safe_load((config_dir / "soglie.yaml").read_text(encoding="utf-8"))

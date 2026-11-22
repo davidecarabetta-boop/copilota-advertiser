@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Stato del tracciamento · {{ slug | upper }}{% endblock %}
-{% block crumbs %}<a href="/c/{{ slug }}">← {{ slug | upper }}</a>{% endblock %}
 {% macro tri(name, value) -%}
 <select name="{{ name }}">
   <option value="" {% if value is none %}selected{% endif %}>non so</option>
@@ -9,8 +8,9 @@
 </select>
 {%- endmacro %}
 {% block body %}
-<form method="post" class="wrap" style="gap:16px">
-  <p class="muted">Solo fatti verificati: "non so" e campo vuoto vogliono dire "da verificare" e il Copilota lo segnala in giallo.</p>
+<p><a href="/c/{{ slug }}">← Torna a {{ client }}</a></p>
+<form method="post" style="display:grid;gap:16px">
+  <section class="card"><h2>Stato del tracciamento · {{ client }}</h2><p class="muted">Solo fatti verificati: "non so" e campo vuoto vogliono dire "da verificare".</p></section>
   {% for it in items %}{% set a = it.a %}{% set t = it.t %}{% set p = a.account_id ~ '__' %}
   <section class="card">
     <h2>{{ a.platform | capitalize }} · {{ a.name }}</h2>

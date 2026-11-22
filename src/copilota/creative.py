@@ -249,7 +249,8 @@ def analyze_account(source: DataSource, account: Row, th: dict, as_of: date | No
                           "buchi": _gaps(angles, formats)},
                 action_key="aggiunta_creativita_asset", priority=2))
         top, top_spend = max(active.items(), key=lambda kv: kv[1])
-        if total and top_spend / total * 100 > div["quota_spesa_max_singolo_concept_pct"]:
+        if (len(active) > 1 and total
+                and top_spend / total * 100 > div["quota_spesa_max_singolo_concept_pct"]):
             findings.append(Finding(
                 as_of, acc, "creativita", "concept", top, "concept_concentration",
                 evidence={**evidence, "quota_pct": round(top_spend / total * 100, 1)},

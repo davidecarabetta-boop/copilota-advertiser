@@ -1,30 +1,30 @@
-"""Copilota Advertiser in locale: Segnali e Creatività per cliente, più gli input a mano
-(export CRM, concept creativi, stato del tracciamento).
+"""Copilota Advertiser in locale.
+
+Per ogni account la pagina principale è "Cosa fare oggi": attività pronte nel formato
+cosa succede / perché / come fare / non fare. I controlli tecnici stanno nelle schede
+Segnali e Creatività. I dati che le piattaforme non danno (export CRM, concept creativi,
+stato del tracciamento) si inseriscono a mano.
 
 Sola lettura verso le piattaforme: scrive solo i CSV in data/<cliente>/.
 Avvio: .venv/Scripts/python -m uvicorn copilota.web.app:app --host 127.0.0.1 --port 8000
 """
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 import yaml
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from copilota.campaigns import campaign_quality, judge
 from copilota.config import CONFIG_DIR, load_thresholds
 from copilota.creative import analyze_account
 from copilota.data import CsvSource, parse_rows, write_table
-from copilota.signals import (
-    META_CONV_OBJECTIVES,
-    Status,
-    check_account,
-    gate,
-    quality_measured,
-    ticket_text,
-)
+from copilota.signals import META_CONV_OBJECTIVES, check_account, lead_quality, quality_measured
+from copilota.tasks import build_plan
 
 DATA_ROOT = Path(__file__).parent.parent.parent.parent / "data"
 HERE = Path(__file__).parent
@@ -32,16 +32,10 @@ HERE = Path(__file__).parent
 app = FastAPI(title="Copilota Advertiser (locale)")
 templates = Jinja2Templates(directory=HERE / "templates")
 
-ISSUE_LABELS = {
-    "fatigue_late": "Creatività in ritardo",
-    "fatigue_prepare": "Prepara il cambio",
-    "diversity_low": "Diversità bassa",
-    "concept_concentration": "Spesa concentrata su un concept",
-    "no_active_concepts": "Nessun concept attivo",
-}
 TRACKING_BOOL = ["enhanced_conversions", "capi_active", "consent_mode_v2", "crm_quality_feedback"]
 TRACKING_NUM = ["capi_coverage_pct", "consent_rate_pct", "consent_rate_prev_pct"]
 TRACKING_DATE = ["crm_last_upload", "customer_match_updated"]
+SEMAFORO_CLASS = {"in ritardo": "bad", "prepara il cambio": "warn", "ok": "ok"}
 
 
 def data_root() -> Path:
@@ -58,6 +52,10 @@ def client_dir(slug: str) -> Path:
     return data_root() / slug
 
 
+def client_label(slug: str) -> str:
+    return "Dati di prova" if slug == "sample" else slug.upper()
+
+
 def target_cpa(client: str) -> float | None:
     f = CONFIG_DIR / "clienti" / f"{client.lower()}.yaml"
     if not f.exists():
@@ -65,7 +63,14 @@ def target_cpa(client: str) -> float | None:
     return ((yaml.safe_load(f.read_text(encoding="utf-8")) or {}).get("target") or {}).get("cpa")
 
 
-def last_date(source: CsvSource) -> date | None:
+def _safe(source, table: str) -> list:
+    try:
+        return source.read(table)
+    except FileNotFoundError:
+        return []
+
+
+def last_date(source) -> date | None:
     dates = [r["date"] for t in ("ga_campaign_daily", "meta_ad_daily") for r in _safe(source, t)]
     return max(dates, default=None)
 
@@ -80,58 +85,95 @@ class AsOfSource:
         return [r for r in self.source.read(table) if r.get("date", self.as_of) <= self.as_of]
 
 
-def _safe(source: CsvSource, table: str) -> list:
-    try:
-        return source.read(table)
-    except FileNotFoundError:
-        return []
+def kpis(source, account: dict, today: date | None) -> dict:
+    """Spesa, lead e costo per lead degli ultimi 30 giorni, più la qualità se misurata."""
+    google = account["platform"] == "google"
+    table, cost, conv = (("ga_campaign_daily", "cost", "conversions") if google
+                         else ("meta_ad_daily", "spend", "leads"))
+    rows = [r for r in _safe(source, table) if r["account_id"] == account["account_id"]]
+    if not rows:
+        return {}
+    today = today or max(r["date"] for r in rows)
+    rows = [r for r in rows if today - timedelta(days=29) <= r["date"] <= today]
+    spend, leads = sum(r[cost] for r in rows), sum(r[conv] for r in rows)
+    lq = lead_quality(source, account, today, load_thresholds(account["client"]))
+    return {"spend": spend, "leads": leads, "cpl": spend / leads if leads else None,
+            "quality": lq["recent"] if lq else None}
 
 
-def account_view(source: CsvSource, account: dict, as_of: date | None) -> dict:
+def evaluate(source, account: dict, as_of: date | None) -> dict:
     th = load_thresholds(account["client"])
     checks = check_account(source, account, th)
-    esito = gate(checks)
-    view = {
-        "account": account,
-        "checks": sorted(checks, key=lambda c: -c.status.rank),
-        "gate": esito,
-        "quality": quality_measured(source, account),
-        "ticket": ticket_text(account, checks) if esito is Status.RED else None,
-        "findings": [],
-    }
-    if account["platform"] == "meta":
-        fs = analyze_account(source, account, th, as_of, target_cpa(account["client"]))
-        view["map"] = [f for f in fs if f.issue_code == "diversity_map"]
-        view["findings"] = sorted((f for f in fs if f.issue_code != "diversity_map"),
-                                  key=lambda f: f.priority)
-    return view
+    findings = (analyze_account(source, account, th, as_of, target_cpa(account["client"]))
+                if account["platform"] == "meta" else [])
+    cq = campaign_quality(source, account)
+    camp = {**judge(cq, th), "from": cq["from"], "to": cq["to"]} if cq else None
+    return {"checks": checks, "findings": findings, "campaigns": cq, "camp": camp,
+            "plan": build_plan(account, checks, findings, camp),
+            "quality": quality_measured(source, account)}
 
 
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    rows = []
+def sidebar() -> list[dict]:
+    """Tutti gli account di tutti i clienti, con lo stato in una parola."""
+    items = []
     for slug in clients():
         source = CsvSource(data_root() / slug)
-        accounts = []
         for a in source.read("accounts"):
-            checks = check_account(source, a, load_thresholds(a["client"]))
-            accounts.append({"a": a, "gate": gate(checks),
-                             "quality": quality_measured(source, a)})
-        rows.append({"slug": slug, "accounts": accounts, "updated": last_date(source)})
-    return templates.TemplateResponse(request, "home.html", {"clients": rows})
+            plan = evaluate(source, a, None)["plan"]
+            if plan.blocked:
+                status, cls = "Bloccato", "bad"
+            elif plan.tasks:
+                status, cls = f"{len(plan.tasks)} da fare", "warn"
+            else:
+                status, cls = "Tutto ok", "ok"
+            items.append({"slug": slug, "client": client_label(slug), "a": a,
+                          "status": status, "cls": cls, "missing": len(plan.missing)})
+    return items
 
 
-@app.get("/c/{slug}", response_class=HTMLResponse)
-def client_page(request: Request, slug: str, al: str | None = None, msg: str | None = None):
+def page(request: Request, template: str, ctx: dict, current: tuple | None = None):
+    return templates.TemplateResponse(request, template, {
+        **ctx, "sidebar": sidebar(), "current": current,
+    })
+
+
+@app.get("/")
+def home():
+    items = sidebar()
+    if not items:
+        return HTMLResponse("<p>Nessun cliente in data/.</p>")
+    first = next((i for i in items if i["slug"] != "sample"), items[0])
+    return RedirectResponse(f"/a/{first['slug']}/{first['a']['account_id']}", status_code=303)
+
+
+@app.get("/c/{slug}")
+def client_redirect(slug: str, msg: str | None = None):
+    acc = CsvSource(client_dir(slug)).read("accounts")[0]["account_id"]
+    suffix = f"?msg={quote(msg)}" if msg else ""
+    return RedirectResponse(f"/a/{slug}/{acc}{suffix}", status_code=303)
+
+
+@app.get("/a/{slug}/{account_id}", response_class=HTMLResponse)
+def account_page(request: Request, slug: str, account_id: str, tab: str = "oggi",
+                 al: str | None = None, msg: str | None = None):
     source = CsvSource(client_dir(slug))
-    updated = last_date(source)
+    account = next((a for a in source.read("accounts") if a["account_id"] == account_id), None)
+    if account is None:
+        raise HTTPException(404, "Account non trovato")
     as_of = date.fromisoformat(al) if al else None
     view_source = AsOfSource(source, as_of) if as_of else source
-    views = [account_view(view_source, a, as_of) for a in source.read("accounts")]
-    return templates.TemplateResponse(request, "client.html", {
-        "slug": slug, "views": views, "updated": as_of or updated, "al": al, "msg": msg,
-        "labels": ISSUE_LABELS, "clients": clients(),
-    })
+    ev = evaluate(view_source, account, as_of)
+    if tab == "creativita" and account["platform"] != "meta":
+        tab = "oggi"
+    return page(request, "account.html", {
+        "slug": slug, "client": client_label(slug), "account": account, "tab": tab,
+        "al": al, "msg": msg, "updated": as_of or last_date(source),
+        "kpi": kpis(view_source, account, as_of), **ev,
+        "maps": [f for f in ev["findings"] if f.issue_code == "diversity_map"],
+        "semaforo_class": SEMAFORO_CLASS,
+        "checks_sorted": sorted(ev["checks"], key=lambda c: -c.status.rank),
+    }, current=(slug, account_id))
+
 
 
 # ---------- Export CRM ----------
@@ -148,9 +190,9 @@ def crm_form(request: Request, slug: str, err: str | None = None):
         s["qualified"] += r["qualified_leads"] or 0
         s["contracts"] += r["contracts"] or 0
     period = (min(r["date"] for r in rows), max(r["date"] for r in rows)) if rows else None
-    return templates.TemplateResponse(request, "crm.html", {
-        "slug": slug, "summary": dict(summary), "period": period, "err": err,
-        "clients": clients(),
+    return page(request, "crm.html", {
+        "slug": slug, "client": client_label(slug), "summary": dict(summary),
+        "period": period, "err": err,
     })
 
 
@@ -204,8 +246,8 @@ def _concept_rows(source: CsvSource) -> list[dict]:
 @app.get("/c/{slug}/concetti", response_class=HTMLResponse)
 def concepts_form(request: Request, slug: str):
     source = CsvSource(client_dir(slug))
-    return templates.TemplateResponse(request, "concepts.html", {
-        "slug": slug, "ads": _concept_rows(source), "clients": clients(),
+    return page(request, "concepts.html", {
+        "slug": slug, "client": client_label(slug), "ads": _concept_rows(source),
         "formats": ["statico", "video", "carosello", "catalogo"],
     })
 
@@ -234,8 +276,8 @@ def tracking_form(request: Request, slug: str):
     source = CsvSource(client_dir(slug))
     current = {t["account_id"]: t for t in _safe(source, "tracking_status")}
     items = [{"a": a, "t": current.get(a["account_id"], {})} for a in source.read("accounts")]
-    return templates.TemplateResponse(request, "tracking.html", {
-        "slug": slug, "items": items, "clients": clients(),
+    return page(request, "tracking.html", {
+        "slug": slug, "client": client_label(slug), "items": items,
     })
 
 

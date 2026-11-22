@@ -45,9 +45,11 @@ def google_rows(conv_per_day=2.0, last_day_conv=None, days=30):
     return rows
 
 
-def backend(total, days=30):
-    return [{"date": END - timedelta(days=i), "client": "X", "source": "google",
-             "leads": total / days, "qualified_leads": total / days / 2, "contracts": 0}
+def backend(total, days=150, client="X"):
+    """`total` lead ogni 30 giorni, storico di `days` giorni (serve per i lead maturi)."""
+    per_day = total / 30
+    return [{"date": END - timedelta(days=i), "client": client, "source": "google",
+             "leads": per_day, "qualified_leads": per_day / 2, "contracts": per_day * 0.02}
             for i in range(days)]
 
 
@@ -169,9 +171,13 @@ def test_lead_quality():
     assert status_of(run(), "Qualità dei lead") is Status.GREEN
     assert status_of(run(back=[]), "Qualità dei lead") is Status.YELLOW
     back = backend(60)
-    for b in back[:7]:  # ultimi 7 giorni: qualificati crollati
-        b["qualified_leads"] = 0
+    for b in back[30:60]:  # lead maturi recenti (30-59 giorni fa): nessun contratto
+        b["contracts"] = 0
     assert status_of(run(back=back), "Qualità dei lead") is Status.RED
+    young = backend(60)
+    for b in young[:30]:  # lead degli ultimi 30 giorni: ancora aperti, non contano
+        b["contracts"] = 0
+    assert status_of(run(back=young), "Qualità dei lead") is Status.GREEN
 
 
 def offline(per_day, days=30):
@@ -204,3 +210,56 @@ def test_last_upload_taken_from_offline_data():
     track = tracking(crm_last_upload=END - timedelta(days=30))
     checks = run_with(tracking_status=[track], offline_conversions_daily=offline(1, days=2))
     assert status_of(checks, "Conversione di ottimizzazione") is Status.GREEN
+
+
+def test_verified_tracking_turns_crm_gap_into_attribution():
+    acc = {**ACCOUNT, "client": "RATTIX"}  # config/clienti/rattix.yaml: tracciamento verificato
+    src = FakeSource(ga_campaign_daily=google_rows(), tracking_status=[tracking()],
+                     backend_daily=backend(20, client="RATTIX"))
+    c = next(c for c in check_account(src, acc, TH) if c.name == "Riconciliazione con CRM")
+    assert c.status is Status.YELLOW and not c.blocking and c.data.get("attribution")
+    blocking = next(c for c in run(back=backend(20)) if c.name == "Riconciliazione con CRM")
+    assert blocking.status is Status.RED and blocking.blocking
+
+
+def test_unexplained_crash_blocks_but_explained_does_not():
+    rows = google_rows(conv_per_day=5)
+    for r in rows[-7:]:
+        r["conversions"] = 0.5
+    crash = next(c for c in run(rows=rows) if c.name == "Andamento conversioni")
+    assert crash.blocking  # nessuna causa, tracciamento non verificato
+
+
+def meta_rows():
+    rows = []
+    for i in range(30):
+        d = END - timedelta(days=29 - i)
+        on = i < 21  # l'ad set buono va in pausa 9 giorni fa
+        for adset, leads in (("good", 10 if on else 0), ("weak", 0.2)):
+            rows.append({"date": d, "account_id": "act_1", "campaign_id": "c1",
+                         "adset_id": adset, "ad_id": adset, "ad_name": adset, "concept": "",
+                         "spend": 100.0 if (on or adset == "weak") else 0.0,
+                         "impressions": 1000, "reach": 800, "frequency": 1.2, "clicks": 20,
+                         "leads": leads})
+    return rows
+
+
+def test_cause_found_in_change_history():
+    acc = {"account_id": "act_1", "platform": "meta", "client": "X", "name": "M",
+           "objective": "lead_qualificato"}
+    events = [{"date": END - timedelta(days=9), "account_id": "act_1", "object_type": "adset",
+               "object_id": "good", "object_name": "BROAD", "change": "status",
+               "old_value": "Active", "new_value": "Inactive", "app": "Power Editor"}]
+    src = FakeSource(meta_ad_daily=meta_rows(), change_events=events,
+                     tracking_status=[tracking(account_id="act_1")])
+    c = next(c for c in check_account(src, acc, TH) if c.name == "Andamento conversioni")
+    assert c.status is Status.RED and not c.blocking
+    cause = c.data["cause"]
+    assert cause["object_name"] == "BROAD" and cause["still_off"] and cause["share_pct"] >= 90
+
+
+def test_brand_campaigns_not_proposed_for_merge():
+    rows = google_rows(conv_per_day=0.5) + [
+        {**r, "campaign_name": "IT|LF|AUTO|SEA|Brand_Exact"} for r in google_rows(0.5)]
+    c = next(c for c in run(rows=rows, back=backend(15)) if c.name == "Conversioni per campagna")
+    assert [x["name"] for x in c.data["campaigns"]] == ["c1"]

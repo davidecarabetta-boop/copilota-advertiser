@@ -13,11 +13,13 @@ Tipi:
   google_offline  qualificati/contratti offline -> offline_conversions_daily.csv (accoda)
   meta            annunci per giorno            -> meta_ad_daily.csv
   meta_campaigns  campagne con obiettivo        -> meta_campaigns.csv
+  meta_changes    cronologia modifiche (activity log) -> change_events.csv (accoda)
 """
 
 import csv
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # Categorie Google che valgono come lead qualificato / contratto nelle conversioni offline
@@ -83,14 +85,62 @@ def meta_campaigns(rows, acc):
     } for r in rows]
 
 
+def _meta_value(v):
+    """Valore leggibile da extra_data: stato ("Inactive") o budget in euro."""
+    if isinstance(v, dict):
+        amount = v.get("old_value", v.get("new_value"))
+        if v.get("type") == "payment_amount" and amount is not None:
+            return f"{amount / 100:.0f}"
+        return ""
+    return "" if v is None else str(v)
+
+
+def meta_changes(rows, acc):
+    out = []
+    for r in rows:
+        ev = r["event_type"]
+        kind = ("adset" if ev.startswith("Ad set") else "campaign" if ev.startswith("Campaign")
+                else "ad")
+        try:
+            extra = json.loads(r.get("extra_data") or "{}")
+        except json.JSONDecodeError:
+            extra = {}
+        day = datetime.strptime(r["datetime"].split(" at ")[0], "%m/%d/%Y").date()
+        if "budget" in ev.lower():
+            change = "budget"
+        elif "status" in ev.lower():
+            change = "status"
+        elif "created" in ev.lower():
+            change = "created"
+        else:
+            change = ev.split(" ", 2)[-1].lower() if " " in ev else ev
+        out.append({
+            "date": day.isoformat(), "account_id": acc, "object_type": kind,
+            "object_id": r["object_id"], "object_name": r.get("object_name", ""),
+            "change": change,
+            # valori solo per stato e budget: il resto (targeting, ecc.) basta sapere che è cambiato
+            "old_value": _meta_value(extra.get("old_value")) if change in ("status", "budget")
+            else "",
+            "new_value": _meta_value(extra.get("new_value")) if change in ("status", "budget")
+            else "",
+            "app": r.get("application_name", ""),
+        })
+    return out
+
+
 KINDS = {
     "google": ("ga_campaign_daily", google, False),
     "google_actions": ("ga_conversion_actions", google_actions, False),
     "google_offline": ("offline_conversions_daily", google_offline, True),
     "meta": ("meta_ad_daily", meta, False),
     "meta_campaigns": ("meta_campaigns", meta_campaigns, False),
+    "meta_changes": ("change_events", meta_changes, True),
 }
-OFFLINE_FIELDS = ["date", "account_id", "stage", "conversions"]
+APPEND_FIELDS = {
+    "offline_conversions_daily": ["date", "account_id", "stage", "conversions"],
+    "change_events": ["date", "account_id", "object_type", "object_id", "object_name", "change",
+                      "old_value", "new_value", "app"],
+}
 
 
 def load_rows(src: Path) -> list[dict]:
@@ -109,13 +159,21 @@ def main() -> None:
     path = Path(out) / f"{table}.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     if append:
-        # tabella condivisa tra account: si sostituiscono solo le righe di questo account
-        keep = []
+        # tabella condivisa tra account e tra export: si aggiunge senza duplicare
+        old = []
         if path.exists():
             with open(path, encoding="utf-8", newline="") as f:
-                keep = [r for r in csv.DictReader(f) if r["account_id"] != acc]
-        rows = keep + rows
-    fields = OFFLINE_FIELDS if append else (list(rows[0]) if rows else None)
+                old = list(csv.DictReader(f))
+        if table == "offline_conversions_daily":
+            old = [r for r in old if r["account_id"] != acc]
+        seen, merged = set(), []
+        for r in old + rows:
+            key = tuple(str(r[k]) for k in APPEND_FIELDS[table])
+            if key not in seen:
+                seen.add(key)
+                merged.append(r)
+        rows = merged
+    fields = APPEND_FIELDS[table] if append else (list(rows[0]) if rows else None)
     if not fields:
         sys.exit(f"{kind}: nessuna riga nell'export, file non scritto")
     with open(path, "w", newline="", encoding="utf-8") as f:

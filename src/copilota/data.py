@@ -57,11 +57,28 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "creative_concepts": {
         "ad_id": str, "concept": str, "angle": str, "format": str, "confirmed": _bool,
     },
+    # Cronologia delle modifiche (Meta: activity log; Google: change_event). Serve a trovare
+    # la causa di un crollo prima di dare la colpa al tracciamento.
+    "change_events": {
+        "date": date.fromisoformat, "account_id": str, "object_type": str, "object_id": str,
+        "object_name": str, "change": str, "old_value": str, "new_value": str, "app": str,
+    },
     # Export CRM del cliente (la verità): conteggi per giorno di arrivo del lead e piattaforma.
     # Specifica per il cliente in docs/export_crm.md.
     "backend_daily": {
         "date": date.fromisoformat, "client": str, "source": str,
         "leads": int, "qualified_leads": _opt(int), "contracts": _opt(int),
+    },
+    # Export CRM per campagna (dall'UTM campaign, nome normalizzato): solo conteggi
+    "backend_campaign_daily": {
+        "date": date.fromisoformat, "client": str, "source": str, "utm_campaign": str,
+        "leads": int, "qualified_leads": int, "contracts": int,
+    },
+    # Spesa per campagna in un periodo (serve a confrontare con i lead maturi del CRM)
+    "campaign_period": {
+        "account_id": str, "campaign_id": str, "campaign_name": str,
+        "date_from": date.fromisoformat, "date_to": date.fromisoformat, "spend": float,
+        "platform_conversions": float,
     },
     # Conversioni offline ricevute dalla piattaforma (Salesforce -> Google, CRM -> Meta via CAPI):
     # quello che l'algoritmo vede davvero. stage = qualified | converted, per data di conversione.

@@ -27,7 +27,9 @@ Regole e soglie vivono solo in `config/regole.yaml` e `config/soglie.yaml`. Non 
    - `accounts.csv`;
    - `tracking_status.csv`: Enhanced Conversions, CAPI, Consent Mode, conversione di ottimizzazione, ritorno della qualità dal CRM, data dell'ultimo caricamento offline, Customer Match;
    - `backend_daily.csv`: export CRM del cliente se c'è (formato in `docs/export_crm.md`), altrimenti solo intestazione.
-5. Lanciare `python scripts/run_signals.py data/<cliente>`.
+   - export CRM Salesforce: `python -I scripts/import_crm_salesforce.py <cliente> <export.xls>` (regole nella sezione `crm` del file cliente; nei file restano solo conteggi);
+   - cronologia Meta: `ads_account_get_activity_logs` con `event_category` `ad_set` e `campaign`, poi `import_mcp_export.py meta_changes`.
+5. Lanciare `python scripts/run_signals.py data/<cliente>` o aprire l'app (`python -m uvicorn copilota.web.app:app --host 127.0.0.1 --port 8000`).
 6. Prima di riportare un rosso, **cercare la causa** (vedi sotto). Non fermarsi al sintomo.
 7. Riportare all'utente per account: esito, cosa è rosso e perché, cosa fare, cosa manca per un giudizio completo.
 

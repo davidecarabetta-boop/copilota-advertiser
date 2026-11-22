@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Export CRM · {{ slug | upper }}{% endblock %}
-{% block crumbs %}<a href="/c/{{ slug }}">← {{ slug | upper }}</a>{% endblock %}
 {% block body %}
+<p><a href="/c/{{ slug }}">← Torna a {{ client }}</a></p>
 <section class="card">
   <h2>Export CRM</h2>
   <p class="muted">Lead, lead qualificati e contratti per giorno di arrivo e piattaforma. Solo conteggi, nessun dato personale. Formato in <code>docs/export_crm.md</code>. Il caricamento sostituisce l'export precedente.</p>

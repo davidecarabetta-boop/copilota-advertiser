@@ -12,7 +12,14 @@ segnali:
   crm_max_giorni_senza_caricamento: 7             # oltre: la qualità dal CRM non arriva più, rosso
   quota_conversioni_non_lead_giallo_pct: 5        # conversioni contate che non sono lead
   quota_conversioni_non_lead_rosso_pct: 30
-  calo_tasso_qualificati_rosso_pct: 30            # lead qualificati / lead, ultimi 7 giorni vs prima
+  calo_tasso_qualificati_rosso_pct: 30            # contratti / lead (export CRM) o qualificati / lead (offline), recente vs prima
+  # Nel CRM la fase è quella attuale: i lead recenti sono ancora aperti. La qualità si confronta
+  # solo su lead "maturi" e su finestre lunghe (i contratti sono pochi).
+  qualita_giorni_maturazione: 30
+  qualita_finestra_giorni: 30
+  qualita_confronto_giorni: 90
+  qualita_min_lead: 50
+  causa_quota_conversioni_min_pct: 50             # un oggetto in pausa "spiega" il crollo se portava almeno metà delle conversioni
   scarto_offline_vs_crm_giallo_pct: 20            # qualificati nel CRM non caricati sulla piattaforma
   copertura_capi_min_pct: 80
   calo_consenso_alert_punti: 10
@@ -45,6 +52,13 @@ creativita_diversita:
   angoli_min_per_campagna: 3     # concept diversi con lo stesso messaggio non sono diversità
   formati_min_per_campagna: 2
   quota_spesa_max_singolo_concept_pct: 50
+
+campagne:                        # qualità dei lead per campagna (export CRM per UTM campaign)
+  lead_min: 30                   # sotto, troppo pochi lead per giudicare la campagna
+  volte_media: 2                 # costa almeno il doppio della media per lead in trattativa
+  quota_spesa_min_pct: 10        # e pesa almeno il 10% della spesa: vale la pena intervenire
+  trattative_min_migliore: 10    # per indicarla come "dove spostare budget"
+  utm_non_abbinati_min_lead: 50  # lead con UTM di campagne che non si trovano: da sistemare
 
 google:
   impression_share_persa_budget_alert_pct: 20

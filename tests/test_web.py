@@ -18,14 +18,20 @@ def client(tmp_path):
 
 def test_pages_render(client):
     c, _ = client
-    assert "DEMO" in c.get("/").text
-    page = c.get("/c/demo").text
-    assert "Segnali rosso" in page and "Mappa della diversità" in page
-    assert "Creatività in ritardo" in page
+    home = c.get("/")  # porta al primo account
+    assert "Cosa fare oggi" in home.text and "DEMO Auto (test)" in home.text
+    google = c.get("/a/demo/1000000001").text
+    assert "da fare oggi" in google and "Cosa succede" in google and "Non fare" in google
+    meta = c.get("/a/demo/act_1000000002").text
+    assert "Bloccato" in meta and "Copia il testo" in meta and "Oggetto: [Copilota]" in meta
+    assert "Sostituisci la creatività" not in meta  # bloccato: solo il ticket
+    for tab in ("dati", "segnali", "creativita"):
+        assert c.get(f"/a/demo/act_1000000002?tab={tab}").status_code == 200
     for path in ("/c/demo/crm", "/c/demo/concetti", "/c/demo/tracciamento"):
         assert c.get(path).status_code == 200
-    past = c.get("/c/demo?al=2026-11-10").text
-    assert "Vista come al" in past and "Il 10/11" in past and "Il 21/11" not in past
+    past = c.get("/a/demo/1000000001?tab=segnali&al=2026-11-10").text
+    assert "stai guardando il passato" in past and "Il 10/11" in past and "Il 21/11" not in past
+    assert c.get("/a/demo/nessuno").status_code == 404
 
 
 def test_unknown_client_404(client):
