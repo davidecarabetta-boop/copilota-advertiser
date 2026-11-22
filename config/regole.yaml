@@ -1,0 +1,146 @@
+# Fonte unica delle regole di modifica.
+# Letta da interfaccia, MCP e skill. I valori numerici sono una proposta da validare.
+# livelli: puoi_farlo | serve_senior | vietato
+
+guardrail:
+  blocco_se_segnali_rossi: true          # con Segnali rossi l'unica azione ammessa è aprire un ticket
+  blocco_se_in_apprendimento: true       # eccezione: pausa d'emergenza approvata dal senior
+  blocco_se_in_test: true                # nessuna modifica agli oggetti coinvolti in un test in corso
+  blocco_chiusura_anticipata_test: true
+  valori_liberi_advertiser: false        # l'advertiser conferma o scarta le proposte, non digita valori
+  anteprima_obbligatoria: true           # confronto prima / dopo prima di ogni scrittura
+  conferma_doppia_reset_apprendimento_meta: true
+  annulla_entro_giorni: 7
+  max_modifiche_per_account_al_giorno: 10
+  linee_guida_brand_vincolanti: true
+
+azioni:
+  pausa_riattivazione:
+    oggetti: [annuncio, gruppo_annunci, ad_set]
+    piattaforme: [google, meta]
+    livello: puoi_farlo
+    limiti: "solo se proposta dal tool"
+
+  negative_keyword:
+    ambiti: [campagna, account, pmax]
+    piattaforme: [google]
+    livello: puoi_farlo
+    limiti: "solo termini proposti; controllo contro keyword attive"
+
+  brand_exclusion:
+    piattaforme: [google]
+    livello: serve_senior
+
+  aggiunta_creativita_asset:
+    piattaforme: [google, meta]
+    livello: puoi_farlo
+    limiti: "si aggiunge, non si sostituisce dentro un annuncio esistente"
+
+  cambio_url_finale:
+    piattaforme: [google, meta]
+    livello: serve_senior
+    limiti: "solo verso pagine verificate dal modulo post-click (coerenti, funzionanti, tracciate)"
+
+  nuovo_rsa:
+    piattaforme: [google]
+    livello: puoi_farlo
+    limiti: "gli RSA esistenti non si modificano: se ne crea uno nuovo"
+
+  miglioramenti_advantage_creative:
+    piattaforme: [meta]
+    livello: puoi_farlo
+    limiti: "solo nella direzione delle linee guida del brand"
+
+  budget_giornaliero:
+    piattaforme: [google, meta]
+    livello: puoi_farlo
+    variazione_max_pct: 20
+    raffreddamento_giorni: 7
+    oltre_limite: serve_senior
+
+  target_offerta:          # tROAS, tCPA, bid cap, cost cap
+    piattaforme: [google, meta]
+    livello: serve_senior
+    variazione_max_pct: 15
+    raffreddamento_giorni: 14
+
+  strategia_obiettivo_valore:   # strategia di offerta, obiettivo di conversione, regole di valore
+    piattaforme: [google, meta]
+    livello: serve_senior
+    richiede: segnali_verdi
+
+  struttura_campagne:      # creare, accorpare, spegnere
+    piattaforme: [google, meta]
+    livello: serve_senior
+    limiti: "il tool crea la bozza in pausa, il senior la attiva"
+
+  esclusioni_pubblico_posizionamenti:
+    piattaforme: [google, meta]
+    livello: serve_senior
+
+  esperimenti_test:
+    piattaforme: [google, meta]
+    livello: serve_senior
+
+  conversioni_capi_offline_customer_match:
+    livello: vietato
+    note: "gestite dalle pipeline del team analytics"
+
+  fatturazione_accessi_impostazioni_account:
+    livello: vietato
+    note: "non esposte né in interfaccia né in MCP"
+
+  eliminazione:
+    livello: vietato
+    note: "si mette in pausa, non si elimina"
+
+# Mappa degli strumenti di scrittura degli MCP ufficiali → azione.
+# Letta dagli hook PreToolUse (fase 08). Uno strumento di scrittura NON elencato qui è bloccato.
+# Gli strumenti di sola lettura non passano dai controlli.
+# Nomi Meta rilevati dal connettore il 2026-11-22; Google da completare in fase 00b.
+strumenti_mcp:
+  meta:
+    ads_update_entity:            # azione decisa in base ai campi modificati
+      campi:
+        status: pausa_riattivazione
+        daily_budget: budget_giornaliero
+        lifetime_budget: budget_giornaliero
+        bid_amount: target_offerta
+        bid_strategy: strategia_obiettivo_valore
+        roas_average_floor: target_offerta
+        optimization_goal: strategia_obiettivo_valore
+        targeting: esclusioni_pubblico_posizionamenti
+      altri_campi: serve_senior
+    ads_activate_entity: pausa_riattivazione
+    ads_create_ad: aggiunta_creativita_asset
+    ads_create_creative: aggiunta_creativita_asset
+    ads_creative_upload_media: aggiunta_creativita_asset
+    ads_create_upload_url: aggiunta_creativita_asset
+    ads_finalize_upload: aggiunta_creativita_asset
+    ads_creative_create_image_variations: aggiunta_creativita_asset
+    ads_creative_update: miglioramenti_advantage_creative
+    ads_creative_update_image_elements: aggiunta_creativita_asset
+    ads_create_campaign: struttura_campagne
+    ads_create_ad_set: struttura_campagne
+    ads_duplicate_entity: struttura_campagne
+    ads_experiment_abtest_create_test: esperimenti_test
+    ads_experiment_abtest_update_test: esperimenti_test
+    ads_experiment_lift_create_test: esperimenti_test
+    ads_create_custom_audience: conversioni_capi_offline_customer_match
+    ads_update_custom_audience: conversioni_capi_offline_customer_match
+    ads_delete_custom_audience: eliminazione
+    ads_creative_delete: eliminazione
+    ads_boost_ig_post: struttura_campagne
+    ads_dataset_create: conversioni_capi_offline_customer_match
+    ads_dataset_update_automatic_matching: conversioni_capi_offline_customer_match
+    ads_pixel_event_create: conversioni_capi_offline_customer_match
+    ads_pixel_event_update: conversioni_capi_offline_customer_match
+    ads_pixel_event_delete: eliminazione
+    ads_pixel_parameter_create: conversioni_capi_offline_customer_match
+    ads_pixel_parameter_update: conversioni_capi_offline_customer_match
+    ads_pixel_parameter_delete: eliminazione
+    ads_catalog_*: vietato        # cataloghi e feed: fuori perimetro
+    ads_permission_*: fatturazione_accessi_impostazioni_account
+  google:
+    # Da compilare dopo la verifica degli strumenti di scrittura del connettore Google Ads.
+    # Fino ad allora: nessuno strumento di scrittura Google è consentito.

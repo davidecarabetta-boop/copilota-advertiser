@@ -1,0 +1,34 @@
+[project]
+name = "copilota"
+version = "0.1.0"
+description = "Copilota Advertiser - SearchOn"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "google-ads>=27",
+  "facebook-business>=21",
+  "google-cloud-bigquery>=3.25",
+  "google-cloud-secret-manager>=2.20",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+  "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

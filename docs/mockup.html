@@ -1,0 +1,465 @@
+<title>Copilota Advertiser</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: barra account a sinistra, area di lavoro a schede a destra; su telefono le due parti si impilano */
+:root{
+  --bg:#f4f6f8; --surface:#ffffff; --sunk:#eaeef2; --line:#d6dde4;
+  --fg:#17212b; --muted:#5a6876; --accent:#1d5fd0; --accent-soft:#e3ecfb;
+  --ok:#1f7a4d; --ok-soft:#e1f3e8; --warn:#a86200; --warn-soft:#fbf0dc; --bad:#b4232c; --bad-soft:#fbe4e5;
+  --f-display:"Space Grotesk",system-ui,sans-serif; --f-body:"IBM Plex Sans",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f141a; --surface:#161d25; --sunk:#1c252f; --line:#2a3541;
+  --fg:#e4eaf0; --muted:#93a1af; --accent:#6ea2ff; --accent-soft:#1b2c48;
+  --ok:#5cc28a; --ok-soft:#14301f; --warn:#e6a54a; --warn-soft:#33260f; --bad:#f07178; --bad-soft:#3a1719; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141a; --surface:#161d25; --sunk:#1c252f; --line:#2a3541;
+  --fg:#e4eaf0; --muted:#93a1af; --accent:#6ea2ff; --accent-soft:#1b2c48;
+  --ok:#5cc28a; --ok-soft:#14301f; --warn:#e6a54a; --warn-soft:#33260f; --bad:#f07178; --bad-soft:#3a1719; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px}
+h1,h2,h3{font-family:var(--f-display);font-weight:600;margin:0;text-wrap:balance}
+p{margin:0}
+button{font:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;margin:0 auto 16px;max-width:1280px}
+.top h1{font-size:22px}
+.top .sub{color:var(--muted)}
+.example{font-family:var(--f-mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;background:var(--warn-soft);color:var(--warn);padding:2px 8px;border-radius:4px}
+.levers{max-width:1280px;margin:0 auto 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.lever{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:2px}
+.lever b{font-family:var(--f-display);font-weight:600}
+.lever span{color:var(--muted);font-size:13px}
+.app{display:grid;grid-template-columns:270px minmax(0,1fr);gap:16px;max-width:1280px;margin:0 auto}
+@media (max-width:820px){.app{grid-template-columns:minmax(0,1fr)}}
+.side{display:flex;flex-direction:column;gap:8px}
+.side h2{font-size:12px;font-family:var(--f-mono);font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0}
+.acc{all:unset;cursor:pointer;display:grid;gap:6px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.acc:focus-visible{outline:2px solid var(--accent)}
+.acc[aria-current="true"]{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.acc .name{font-weight:600}
+.acc .meta{display:flex;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip.ok{background:var(--ok-soft);color:var(--ok)} .chip.warn{background:var(--warn-soft);color:var(--warn)} .chip.bad{background:var(--bad-soft);color:var(--bad)}
+.chip.plain{background:var(--sunk);color:var(--muted)} .chip.plain::before{display:none}
+td code{font-family:var(--f-mono);font-size:12.5px}
+.main{background:var(--surface);border:1px solid var(--line);border-radius:10px;min-width:0}
+.head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center}
+.head h2{font-size:19px}
+.head .kpis{display:flex;flex-wrap:wrap;gap:4px 18px;margin-left:auto;font-variant-numeric:tabular-nums}
+.kpi{display:grid}
+.kpi span{font-size:11px;color:var(--muted);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.05em}
+.kpi b{font-weight:600}
+.d-bad{color:var(--bad);font-size:12px;font-weight:500} .d-ok{color:var(--ok);font-size:12px;font-weight:500}
+.tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{background:none;border:0;padding:11px 12px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;display:flex;gap:6px;align-items:center}
+.tab[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent);font-weight:500}
+.tab .n{font-family:var(--f-mono);font-size:11px;background:var(--sunk);padding:0 6px;border-radius:4px}
+.tab .lock{color:var(--bad);font-size:11px}
+.pane{padding:18px 20px;display:flex;flex-direction:column;gap:18px}
+.banner{border-radius:8px;padding:12px 14px;display:grid;gap:4px}
+.banner.bad{background:var(--bad-soft);border:1px solid color-mix(in srgb,var(--bad) 35%,transparent)}
+.banner.bad b{color:var(--bad)}
+.banner.warn{background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+.banner.info{background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
+.task{border:1px solid var(--line);border-radius:8px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 12px;padding:14px}
+.task.p1{border-left:4px solid var(--bad)} .task.p2{border-left:4px solid var(--warn)} .task.p3{border-left:4px solid var(--line)}
+.task.done{opacity:.55}
+.task.done .t-title{text-decoration:line-through}
+.task input[type=checkbox]{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}
+.t-row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.t-title{font-weight:600;font-size:15px}
+.t-grid{display:grid;grid-template-columns:110px minmax(0,1fr);gap:4px 12px;margin:10px 0 0;font-size:13.5px}
+@media (max-width:520px){.t-grid{grid-template-columns:minmax(0,1fr)} .t-grid dt{margin-top:6px}}
+.t-grid dt{color:var(--muted);font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding-top:2px}
+.t-grid dd{margin:0}
+.t-grid ol{margin:0;padding-left:18px}
+.t-grid .no{color:var(--bad)}
+.t-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:6px 12px;border-radius:6px;font-size:13px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] .btn.primary{color:#0f141a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn.primary{color:#0f141a}}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.lvl{font-family:var(--f-mono);font-size:11px;padding:1px 7px;border-radius:4px;border:1px solid currentColor}
+.lvl.safe{color:var(--ok)} .lvl.senior{color:var(--warn)}
+.plat{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.lev{font-family:var(--f-mono);font-size:11px;padding:1px 7px;border-radius:4px;background:var(--accent-soft);color:var(--accent)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:11px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.05em;background:var(--sunk);padding:8px 10px;white-space:nowrap}
+td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:top}
+td.num,th.num{text-align:right}
+td.grp{background:var(--sunk);font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px 10px}
+.sec{display:grid;gap:8px}
+.sec h3{font-size:15px}
+.hint{color:var(--muted);font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bar{height:6px;background:var(--sunk);border-radius:3px;overflow:hidden;min-width:80px;position:relative}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar i.low{background:var(--warn)}
+.bar .mark{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--fg)}
+.matrix td{text-align:center;font-family:var(--f-mono)}
+.matrix td:first-child{text-align:left;font-family:var(--f-body)}
+.cell{display:inline-block;min-width:28px;padding:2px 6px;border-radius:4px}
+.cell.has{background:var(--ok-soft);color:var(--ok)}
+.cell.gap{background:var(--bad-soft);color:var(--bad)}
+.toggle{font-family:var(--f-mono);font-size:12px}
+.toggle.on{color:var(--ok)} .toggle.off{color:var(--bad)}
+.toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));right:max(16px,env(safe-area-inset-right,0px));background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:8px;font-size:13px;max-width:calc(100% - 32px)}
+.never{display:grid;gap:6px;padding:12px 14px;border:1px dashed color-mix(in srgb,var(--bad) 50%,transparent);border-radius:8px}
+.never h3{font-size:14px;color:var(--bad)}
+.never ul{margin:0;padding-left:18px}
+.lvl.ban{color:var(--bad)}
+.rules{max-width:1280px;margin:20px auto 0;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;display:grid;gap:18px}
+.rules>h2{font-size:19px}
+.rlist{margin:0;padding-left:20px;display:grid;gap:6px}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.flow .step{flex:1 1 200px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:2px;background:var(--sunk)}
+.flow .step b{font-family:var(--f-display)}
+.flow .step span{font-size:13px;color:var(--muted)}
+.flow .arrow{align-self:center;color:var(--muted);font-size:18px}
+@media (max-width:620px){.flow .arrow{display:none}}
+@media (prefers-reduced-motion:no-preference){.task{transition:opacity .2s}}
+</style>
+
+<header class="top">
+  <h1>Copilota Advertiser</h1>
+  <span class="sub">Non piloti l'algoritmo: gli dai i segnali giusti, le creatività giuste e i vincoli giusti</span>
+  <span class="example">Dati di esempio</span>
+</header>
+<div class="levers">
+  <div class="lever"><b>Segnali</b><span>Su cosa impara l'algoritmo: obiettivo, valore, dati first-party</span></div>
+  <div class="lever"><b>Creatività</b><span>Il nuovo targeting: diversità di concept, formati, angoli</span></div>
+  <div class="lever"><b>Vincoli</b><span>Target, esclusioni, brand, consolidamento</span></div>
+  <div class="lever"><b>Post-click</b><span>Se la gente clicca ma non compra, il problema è la pagina, non l'annuncio</span></div>
+  <div class="lever"><b>Misurazione e test</b><span>Quanto è davvero incrementale, e come dimostrarlo con A/B e lift</span></div>
+</div>
+
+<div class="app">
+  <nav class="side" aria-label="Account">
+    <h2>Account assegnati</h2>
+    <div id="accList" class="side"></div>
+  </nav>
+  <main class="main" id="main"></main>
+</div>
+<section class="rules" aria-labelledby="rules-h">
+  <h2 id="rules-h">Regole di modifica</h2>
+  <p class="hint">Valgono uguali per l'interfaccia, per il futuro MCP usato dalla chat di Claude e per la skill. Le applica il server, non l'advertiser: dalla chat non si può aggirarle.</p>
+
+  <div class="sec"><h3>Cosa si può modificare e chi decide</h3>
+  <div class="tw"><table><thead><tr><th>Azione</th><th>Google Ads</th><th>Meta</th><th>Livello</th><th>Limiti</th></tr></thead><tbody>
+   <tr><td class="grp" colspan="5">Puoi farlo</td></tr>
+   <tr><td>Pausa e riattivazione di annunci, gruppi di annunci, ad set</td><td>Sì</td><td>Sì</td><td><span class="lvl safe">Puoi farlo</span></td><td>Solo se proposto dal tool; mai su campagne in apprendimento</td></tr>
+   <tr><td>Negative keyword (campagna, account, PMax) e brand exclusion</td><td>Sì</td><td>—</td><td><span class="lvl safe">Puoi farlo</span></td><td>Solo termini della lista proposta; controllo automatico contro le keyword attive</td></tr>
+   <tr><td>Aggiunta di creatività e asset ad asset group e ad set</td><td>Sì</td><td>Sì</td><td><span class="lvl safe">Puoi farlo</span></td><td>Si aggiunge, non si sostituisce dentro un annuncio esistente</td></tr>
+   <tr><td>Nuovi annunci RSA</td><td>Sì</td><td>—</td><td><span class="lvl safe">Puoi farlo</span></td><td>Il testo di un RSA esistente non si modifica: se ne crea uno nuovo</td></tr>
+   <tr><td>Miglioramenti automatici di Advantage+ creative</td><td>—</td><td>Sì</td><td><span class="lvl safe">Puoi farlo</span></td><td>Solo verso le linee guida del brand salvate per il cliente</td></tr>
+   <tr><td>Budget giornaliero</td><td>Sì</td><td>Sì</td><td><span class="lvl safe">Puoi farlo</span></td><td>Entro ±20%, al massimo una volta ogni 7 giorni per campagna</td></tr>
+   <tr><td class="grp" colspan="5">Serve il senior</td></tr>
+   <tr><td>Budget oltre ±20%</td><td>Sì</td><td>Sì</td><td><span class="lvl senior">Serve il senior</span></td><td>Avviso: su Meta può far ripartire l'apprendimento</td></tr>
+   <tr><td>Target tROAS / tCPA, bid cap, cost cap</td><td>Sì</td><td>Sì</td><td><span class="lvl senior">Serve il senior</span></td><td>Variazione massima 15% per volta, poi 14 giorni di blocco</td></tr>
+   <tr><td>Strategia di offerta, obiettivo di conversione, regole di valore</td><td>Sì</td><td>Sì</td><td><span class="lvl senior">Serve il senior</span></td><td>Solo con Segnali verdi</td></tr>
+   <tr><td>Creare, accorpare, spegnere campagne</td><td>Sì</td><td>Sì</td><td><span class="lvl senior">Serve il senior</span></td><td>Il tool prepara la bozza in pausa, il senior la attiva</td></tr>
+   <tr><td>Esclusioni di pubblico e posizionamenti</td><td>Sì</td><td>Sì</td><td><span class="lvl senior">Serve il senior</span></td><td></td></tr>
+   <tr><td>Esperimenti, test A/B, conversion lift</td><td>Sì</td><td>Sì</td><td><span class="lvl senior">Serve il senior</span></td><td></td></tr>
+   <tr><td class="grp" colspan="5">Mai dal tool</td></tr>
+   <tr><td>Conversioni, CAPI, conversioni offline, liste Customer Match</td><td>—</td><td>—</td><td><span class="lvl ban">Team analytics</span></td><td>Passano dalle pipeline dati, non dall'advertiser</td></tr>
+   <tr><td>Fatturazione, accessi, utenti, impostazioni dell'account</td><td>—</td><td>—</td><td><span class="lvl ban">Vietato</span></td><td>Non esposte né nell'interfaccia né nell'MCP</td></tr>
+   <tr><td>Eliminazione di campagne, annunci, asset</td><td>—</td><td>—</td><td><span class="lvl ban">Vietato</span></td><td>Si mette in pausa, non si elimina</td></tr>
+  </tbody></table></div></div>
+
+  <div class="sec"><h3>Guardrail sempre attivi</h3>
+  <ol class="rlist">
+   <li><b>Segnali rossi, scrittura bloccata.</b> Se il controllo Segnali dell'account è rosso, è ammesso solo aprire un ticket.</li>
+   <li><b>Apprendimento protetto.</b> Nessuna modifica a campagne o ad set in apprendimento, salvo pausa d'emergenza approvata dal senior.</li>
+   <li><b>Niente valori liberi.</b> L'advertiser conferma o scarta la proposta del tool; non scrive budget o target a mano.</li>
+   <li><b>Soglie minime di dati.</b> Nessuna proposta prima di 7 giorni e del volume minimo di conversioni definito per l'account.</li>
+   <li><b>Raffreddamento.</b> Dopo una modifica a budget o target, la stessa campagna è bloccata per il periodo indicato in tabella.</li>
+   <li><b>Avviso apprendimento Meta.</b> Prima di ogni modifica che può far ripartire l'apprendimento, il tool lo dice e chiede una seconda conferma.</li>
+   <li><b>Anteprima obbligatoria.</b> Ogni modifica mostra prima il confronto valore attuale / valore nuovo.</li>
+   <li><b>Log e annulla.</b> Ogni scrittura registra chi, cosa, quando, valore prima e dopo, proposta di origine. Ogni modifica si può annullare per 7 giorni.</li>
+   <li><b>Limiti giornalieri.</b> Massimo di modifiche per account al giorno, per evitare raffiche di interventi.</li>
+   <li><b>Brand.</b> Le linee guida del cliente (sfondi, musica, testi generati, posizionamenti esclusi) sono vincoli, non suggerimenti.</li>
+  </ol></div>
+
+  <div class="sec"><h3>Come funzionerà dalla chat di Claude</h3>
+  <div class="flow">
+   <div class="step"><b>Skill</b><span>Insegna a Claude il metodo: leve, semaforo creatività, come spiegare all'advertiser. Guida, non protegge.</span></div>
+   <div class="arrow" aria-hidden="true">→</div>
+   <div class="step"><b>MCP</b><span>Espone solo le azioni in tabella. Controlla ruolo, livello, segnali, apprendimento e raffreddamento prima di eseguire.</span></div>
+   <div class="arrow" aria-hidden="true">→</div>
+   <div class="step"><b>API Google / Meta</b><span>Scrittura con log e annulla. Le richieste "Serve il senior" restano in coda finché non arriva l'ok.</span></div>
+  </div>
+  <p class="hint">Fase 1: tool e MCP in sola lettura, l'advertiser esegue a mano. Fase 2: si apre la scrittura del livello "Puoi farlo". Fase 3: coda di approvazione per il senior.</p></div>
+</section>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const ACCOUNTS = [
+ {id:"arredo", name:"Arredo Nord", type:"E-commerce · PMax, AI Max, Advantage+", gate:"ok",
+  kpi:[["Spesa 30g","19.400 €",""],["ROAS piattaforma","3,9",""],["Margine / spesa","1,2","−0,3","bad"]],
+  signals:[
+   ["Tracking","Enhanced Conversions + CAPI, deduplica event_id","ok","Copertura CAPI 94%, Enhanced Conversions attive"],
+   ["Tracking","Consent Mode v2","warn","Consenso sceso dal 71% al 58% da martedì: meno segnali alle piattaforme"],
+   ["Obiettivo","Conversione usata per ottimizzare","ok","Acquisto con valore"],
+   ["Valore","Valore passato = fatturato o margine?","bad","Fatturato. Accessori (margine 12%) e divani (45%) valgono uguale per l'algoritmo"],
+   ["Valore","Obiettivo acquisizione nuovi clienti","warn","Non attivo: il 41% delle vendite PMax è da clienti già acquisiti"],
+   ["First-party","Customer Match / pubblico clienti Meta","warn","Ultimo aggiornamento 94 giorni fa (8.200 contatti)"],
+   ["Volume","Conversioni per campagna (soglia 30/mese)","warn","4 campagne Search sotto soglia: l'algoritmo non ha abbastanza dati"]
+  ],
+  tasks:[
+   {p:1,lev:"Post-click",plat:"Sito",lvl:"safe",ticket:true,title:"Non toccare PMax Outdoor: il problema è sul sito",
+    what:"PMax Outdoor ha CTR sopra la media (+34%) ma conversione dimezzata (−52%) dal 18 novembre.",
+    why:"Le persone cliccano e arrivano, poi si fermano tra checkout e acquisto, solo su mobile. Le campagne funzionano: abbassare budget o target peggiorerebbe solo l'apprendimento.",
+    how:["Apri il ticket al team sito/CRO: funnel, date e pagina sono già allegati","Nel frattempo togli l'annuncio 'Set da giardino −30%': la promo è finita (scheda Post-click)"],
+    no:"Non abbassare budget o tROAS di PMax Outdoor per compensare.",impact:"Recupero stimato di 15-20 vendite a settimana"},
+   {p:1,lev:"Segnali",plat:"Google + Meta",lvl:"senior",title:"Ottimizza sul margine, non sul fatturato",
+    what:"Il ROAS sembra buono (3,9) ma il margine copre a malapena la spesa (1,2).",
+    why:"PMax spinge gli accessori: costano poco da vendere ma non lasciano margine. L'algoritmo fa esattamente quello che gli chiedi.",
+    how:["Chiedi al team analytics di passare il margine come valore di conversione (feed + regole di valore)","Dopo l'attivazione, abbassa il tROAS in proporzione: il tool ti dà il nuovo valore"],
+    no:"Non alzare il tROAS per 'correggere' il margine: taglia volume senza cambiare il mix.",impact:"Margine / spesa stimato da 1,2 a 1,6"},
+   {p:1,lev:"Creatività",plat:"Meta",lvl:"safe",title:"Aggiungi 4 concept nuovi in Advantage+: oggi ne hai 3",
+    what:"Il 78% della spesa va su 3 concept quasi uguali (prodotto su sfondo, prezzo).",
+    why:"Meta trova pubblici diversi solo con creatività diverse. Con 3 concept simili raggiungi sempre le stesse persone.",
+    how:["Apri Creatività: i buchi nella mappa sono già evidenziati","Invia i 4 brief al tool creativo","Carica i concept nella stessa campagna, senza creare nuovi ad set"],
+    no:"Non creare 10 varianti dello stesso visual cambiando solo il colore: per Meta sono la stessa creatività.",impact:"Copertura e CPA: −10/20% atteso"},
+   {p:2,lev:"Misurazione",plat:"Google",lvl:"senior",title:"PMax si prende il brand: 31% delle conversioni da ricerche 'arredo nord'",
+    what:"Una parte importante di quello che PMax si attribuisce sono persone che ti cercavano già per nome.",
+    why:"Il ROAS di PMax è gonfiato e quelle vendite le avresti fatte comunque con la Search Brand, che costa meno.",
+    how:["Proposta: brand exclusion su PMax","Confronta per 2 settimane il ROAS non brand reale"],
+    no:"Non spegnere PMax: il problema è il brand, non la campagna.",impact:"ROAS PMax reale, meno spesa sul brand"},
+   {p:2,lev:"Vincoli",plat:"Google",lvl:"senior",title:"Accorpa 4 campagne Search in 1 con AI Max",
+    what:"Search Tavoli, Sedie, Librerie, Letti fanno 6-14 conversioni al mese ciascuna.",
+    why:"Divise, nessuna ha abbastanza dati per lo Smart Bidding. Insieme arrivano a 41.",
+    how:["Il piano di accorpamento è nella scheda Google Ads","Mantieni gli annunci per categoria come gruppi di annunci"],
+    no:"Non accorpare la Search Brand: deve restare separata.",impact:"Offerte più stabili, CPA −10% atteso"},
+   {p:2,lev:"Creatività",plat:"Google",lvl:"safe",title:"Completa 2 asset group PMax: mancano i video verticali",
+    what:"Divani e Outdoor non hanno video 9:16.",
+    why:"Senza video Google ne genera uno automatico dalle immagini, di solito scadente, e lo mostra su YouTube Shorts.",
+    how:["Usa i brief video nella scheda Creatività","Carica almeno 1 video verticale per asset group"],
+    no:"Non togliere le immagini esistenti.",impact:"Qualità su YouTube e Demand Gen"},
+   {p:3,lev:"Vincoli",plat:"Meta",lvl:"safe",title:"Disattiva 2 miglioramenti automatici di Advantage+ creative",
+    what:"Sono attivi 'sfondi generati' e 'musica'.",
+    why:"Le linee guida del brand chiedono foto reali degli ambienti: gli sfondi generati le violano.",
+    how:["Campagna › Annuncio › Miglioramenti creativi › disattiva i due elencati in Meta Ads"],
+    no:"Lascia attivi luminosità/contrasto e adattamento formato: aiutano e non toccano il brand.",impact:"Coerenza con il brand"}
+  ],
+  frozen:["Campagne del test A/B UGC vs statiche (Meta): intoccabili fino al 6 dicembre","tROAS di PMax: modificato il 20 novembre, non toccare fino al 4 dicembre","Campagna Advantage+ vendite: in apprendimento fino al 28 novembre","Budget complessivo: deciso con il cliente fino a fine mese"],
+  google:{
+   consolidate:[["Search Brand",62,"Resta separata"],["Search Tavoli",14,"Accorpa"],["Search Sedie",9,"Accorpa"],["Search Librerie",6,"Accorpa"],["Search Letti",12,"Accorpa"],["PMax Divani",88,"Ok"],["PMax Outdoor",33,"Ok"]],
+   targets:[["PMax Divani","tROAS 450%","412%","98%","Ok: target raggiungibile"],["PMax Outdoor","tROAS 600%","655%","54%","Target troppo alto: spende metà budget. Proposta 500%"],["Search Generica","tCPA 35 €","48 €","100%","Target troppo basso rispetto allo storico"]],
+   channels:[["Shopping","61%","72%"],["Search (incl. brand)","18%","21%"],["YouTube","9%","2%"],["Display","8%","3%"],["Gmail / Discover","4%","2%"]],
+   assets:[["Divani","Video 9:16 mancante","Immagini 14/20"],["Outdoor","Video 9:16 mancante","Titoli lunghi 2/5"],["Accessori","Completo",""]],
+   guard:"Negative a livello di account: 9 termini (lavoro, usato, gratis…) già attivi. 3 nuovi proposti dai search terms di AI Max."
+  },
+  meta:{
+   avgLife:34,
+   fatigue:[
+    ["Prezzo in evidenza",41,"4,1","−34%","18%","+22%","+27%","late","Cambia ora: affianca 2 concept nuovi, il vecchio perde spesa da solo"],
+    ["Prodotto su sfondo bianco",26,"2,9","−21%","31%","+8%","+6%","prep","Prepara il cambio: manda il brief adesso, la produzione richiede giorni"],
+    ["Ambiente reale soggiorno",12,"2,4","−4%","52%","+3%","−18%","ok","Funziona: non toccare, chiedi più varianti dello stesso concept"],
+    ["UGC divano letto (nuovo)",4,"1,3","—","88%","—","—","early","Troppo presto: aspetta almeno 7 giorni e la fine dell'apprendimento"]
+   ],
+   structure:[["Campagne attive","3","Ok (consigliato 2-4)"],["Ad set con budget < 20 €/g","0","Ok"],["Quota spesa su Advantage+","84%","Ok"],["Concept attivi","3","Pochi: servono 6+"]],
+   enh:[["Luminosità e contrasto","on","Lascia attivo"],["Adattamento formato","on","Lascia attivo"],["Sfondi generati","on","Disattiva: viola le linee guida"],["Musica","on","Disattiva: non adatta al brand"],["Testo generato","off","Lascia disattivo"]],
+   excl:[["Clienti esistenti in prospecting","Pubblico vecchio di 94 giorni","warn"],["Posizionamenti","Audience Network escluso dal cliente","ok"],["Brand safety","Filtro inventario: standard","ok"]]
+  },
+  creative:{
+   angles:["Prezzo / offerta","Prodotto in ambiente reale","Cliente vero (UGC)","Problema → soluzione","Su misura / artigianato"],
+   formats:["Statica 4:5","Video 9:16","Carosello"],
+   grid:[[3,1,1],[2,0,1],[0,0,0],[0,0,0],[0,0,0]],
+   briefs:[{t:"UGC: cliente che monta e usa il divano letto",f:"Video 9:16 · 20-30s",b:"Persona reale, casa reale, niente studio. Gancio nei primi 2 secondi: il letto che si apre."},
+    {t:"Problema → soluzione: soggiorno piccolo",f:"Carosello · 5 schede",b:"Prima e dopo in un monolocale. Ultima scheda: misure e prezzo."},
+    {t:"Su misura: in laboratorio",f:"Video 9:16 · 15s",b:"Mani, legno, taglio. Messaggio: fatto per la tua casa, in 3 settimane."},
+    {t:"Prodotto in ambiente: Outdoor",f:"Video 9:16 · 10s",b:"Per i due asset group PMax senza video verticale."}],
+   concepts:[["Prezzo in evidenza","61%","3,2","Stanco: frequenza 4,1"],["Prodotto su sfondo bianco","17%","2,1","Sotto media"],["Ambiente reale soggiorno","22%","4,8","Migliore: dagli più varianti"]]
+  },
+  measure:{
+   rows:[["PMax: quota conversioni da ricerche brand","31%","bad","Brand exclusion e confronto per 2 settimane"],["Meta: quota vendite da clienti esistenti","38%","warn","Escludere i clienti dal prospecting (pubblico da aggiornare)"],["Meta: attribuzione usata","7g click + 1g view","ok","Confronta con la vista incrementale di Meta prima di giudicare"],["Ultimo test di incrementalità","mai","warn","Proposta: conversion lift su Advantage+ a gennaio (budget sufficiente)"]]
+  },
+  postclick:{
+   quadrants:[["PMax Outdoor","+34%","−52%","post","Problema dopo il clic: la landing Outdoor non converte"],["Meta · Prodotto su sfondo bianco","−28%","+12%","ad","Creatività poco attraente: la pagina funziona"],["Search Generica","−5%","−8%","mid","Nella media"],["PMax Divani","+22%","+31%","scale","Funziona: candidato a più budget"]],
+   match:[["RSA Outdoor · 'Set da giardino −30%'","/outdoor","bad","La pagina non mostra lo sconto: la promo è finita il 15 novembre ma l'annuncio è ancora attivo"],["Shopping · Tavolo Oslo 180","/tavolo-oslo","warn","Prezzo nel feed 649 €, sulla pagina 699 €: rischio di disapprovazione e clic delusi"],["RSA Tavoli","/ (home)","warn","Porta alla home invece che alla categoria Tavoli"],["Meta · UGC divano letto","/divani-letto","ok","Coerente: stesso prodotto, stesso prezzo"]],
+   funnel:{title:"Traffico a pagamento su /outdoor, mobile, ultimi 7 giorni vs 4 settimane precedenti",steps:[["Sessioni",100,100],["Vista prodotto",62,64],["Carrello",9,11],["Checkout",6.1,7.0],["Acquisto",1.1,3.2]],note:"Il calo è concentrato tra checkout e acquisto, solo su mobile, dal 18 novembre. Desktop invariato: probabile problema nel checkout mobile."},
+   vitals:[["/outdoor","4,1 s","310 ms","bad"],["/divani-letto","2,2 s","140 ms","ok"],["/tavolo-oslo","2,9 s","180 ms","warn"]],
+   lpRatio:["Meta: visualizzazioni landing / clic sul link","64%","warn","Sotto il 70%: una parte delle persone abbandona prima che la pagina carichi"]
+  },
+  tests:{
+   running:[{name:"UGC vs statiche di prodotto",type:"A/B",plat:"Meta",pct:45,end:"6 dicembre",hyp:"I video UGC abbassano il CPA rispetto alle statiche di prodotto",metric:"CPA acquisto",rule:"Se il CPA UGC è almeno il 10% più basso con confidenza ≥ 90%, spostiamo la produzione su UGC",status:"Traffico bilanciato (50/50). Nessuna conclusione prima della fine"}],
+   proposed:[["Advantage+ vendite: conversion lift","Lift","Il 38% delle vendite Meta viene da clienti esistenti: quanto è davvero in più?","ok","Ammissibile: 6 settimane, differenza rilevabile 9%"],["AI Max sulla Search accorpata","Esperimento 50/50","Prima di accorpare le 4 campagne Search","ok","Ammissibile: 4 settimane"],["Nuova landing Outdoor","A/B landing","Dopo il fix del checkout mobile","bad","Non ammissibile: 22 conversioni al mese, servirebbero 4 mesi. Meglio sistemare la pagina e confrontare prima/dopo"]],
+   done:[["Titoli RSA: prezzo vs beneficio","Vince prezzo: CTR +22%, confidenza 95%","Adottato"],["Carosello vs video 9:16 (settembre)","Nessuna differenza dimostrabile","Tenuti entrambi"]],
+   factor:"Fattore di incrementalità Meta: non ancora misurato. Fino al lift, i ROAS di Meta vanno letti come limite superiore."
+  }
+ },
+ {id:"serramenti", name:"Serramenti Valli", type:"Lead gen · Advantage+ leads, PMax", gate:"bad",
+  kpi:[["Spesa 30g","8.100 €",""],["CPL piattaforma","24 €",""],["Lead → preventivo","9%","−14 pt","bad"]],
+  signals:[
+   ["Tracking","Meta 'Lead': Pixel + CAPI","bad","Duplicati: Meta conta 2 lead per ogni modulo"],
+   ["Obiettivo","Conversione usata per ottimizzare","bad","Invio del modulo. L'algoritmo cerca chi compila, non chi compra: il 60% dei lead non risponde al telefono"],
+   ["Obiettivo","Conversioni offline dal CRM","bad","Non collegate: le piattaforme non sanno quali lead diventano preventivi"],
+   ["Tracking","Consent Mode v2","ok","Consenso 66%"]
+  ],
+  tasks:[
+   {p:1,lev:"Segnali",plat:"Dati",lvl:"senior",ticket:true,title:"Collega il CRM: ottimizza su 'preventivo richiesto', non sul modulo",
+    what:"Oggi l'algoritmo è premiato per ogni modulo, anche finto o duplicato.",
+    why:"Più lead economici, meno clienti veri: il CPL scende, i preventivi calano.",
+    how:["Apri il ticket: il testo è già pronto con le prove","Il team analytics collega le conversioni offline (Google) e la CAPI con stato del lead (Meta)","Dopo 2 settimane di dati il tool propone di cambiare l'obiettivo"],
+    no:"Non toccare campagne, budget o target finché i segnali non sono sistemati.",impact:"Sblocca l'ottimizzazione"}
+  ],
+  frozen:["Tutte le campagne: ottimizzazione bloccata finché i segnali non tornano affidabili"],
+  blocked:true
+ },
+ {id:"cantina", name:"Cantina Colli", type:"E-commerce · Advantage+", gate:"warn",
+  kpi:[["Spesa 30g","3.100 €",""],["ROAS piattaforma","4,4","+0,3","ok"],["Conv. 30g","38",""]],
+  signals:[["Tracking","Meta 'Purchase' + CAPI","ok","Copertura CAPI 88%"],["Tracking","Meta vs backend","warn","Meta 38 · backend 33: scarto 15%, sopra la soglia del 10%"],["Volume","Conversioni per campagna (soglia 30/mese)","warn","2 campagne: 21 e 17. Insieme superano la soglia"]],
+  tasks:[{p:2,lev:"Vincoli",plat:"Meta",lvl:"safe",title:"Unisci le due campagne in una sola Advantage+",what:"Due campagne con 21 e 17 acquisti al mese.",why:"Separate, nessuna esce davvero dall'apprendimento.",how:["Duplica la migliore come Advantage+ vendite","Sposta lì le creatività di entrambe","Spegni le vecchie quando la nuova ha speso 3 giorni di budget"],no:"Non lanciare nuovi test creativi finché la nuova campagna è in apprendimento.",impact:"Stabilità, CPA più prevedibile"}],
+  frozen:["Budget: invariato fino a fine mese"],
+  google:null,
+  meta:{avgLife:45,fatigue:[["Bottiglia in cantina",19,"2,1","−8%","44%","+2%","−10%","ok","Funziona: non toccare"]],structure:[["Campagne attive","2","Da unire"],["Concept attivi","5","Ok"]],enh:[["Luminosità e contrasto","on","Lascia attivo"]],excl:[["Clienti esistenti in prospecting","Pubblico aggiornato 12 giorni fa","ok"]]},
+  creative:{angles:["Prodotto","Territorio / cantina","Abbinamento cibo"],formats:["Statica 4:5","Video 9:16","Carosello"],grid:[[2,1,1],[1,1,0],[1,0,1]],briefs:[],concepts:[]},
+  measure:{rows:[["Meta: quota vendite da clienti esistenti","22%","ok","Ok"]]},
+  postclick:{quadrants:[["Advantage+ vendite","+8%","+5%","mid","Nella media"]],match:[["Meta · Bottiglia in cantina","/rosso-colli","ok","Coerente"]],funnel:null,vitals:[["/rosso-colli","2,0 s","120 ms","ok"]],lpRatio:["Meta: visualizzazioni landing / clic sul link","81%","ok","Ok"]},
+  tests:{running:[],proposed:[["Conversion lift","Lift","Capire l'incrementalità di Meta","bad","Non ammissibile: 38 conversioni al mese, troppo poche"]],done:[],factor:"Volumi troppo bassi per un lift: usare il confronto prima/dopo sulle vendite totali."}
+ }
+];
+const LV={safe:["Puoi farlo","safe"],senior:["Serve il senior","senior"]};
+const ST={ok:"Ok",warn:"Da verificare",bad:"Da sistemare"};
+const GATE={ok:"Segnali ok",warn:"Segnali da verificare",bad:"Segnali rotti"};
+const S={acc:"arredo",tab:"briefing",done:{},asked:{},sent:{}};
+try{Object.assign(S,JSON.parse(localStorage.getItem("cop2")||"{}"))}catch(e){}
+function save(){try{localStorage.setItem("cop2",JSON.stringify(S))}catch(e){}}
+const $=s=>document.querySelector(s);
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,2600)}
+const chip=(k,l)=>`<span class="chip ${k}">${esc(l||ST[k])}</span>`;
+const tbl=(head,rows,numCols=[])=>`<div class="tw"><table><thead><tr>${head.map((h,i)=>`<th${numCols.includes(i)?' class="num"':""}>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((c,i)=>`<td${numCols.includes(i)?' class="num"':""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+
+function renderSide(){
+  $("#accList").innerHTML=ACCOUNTS.map(a=>{
+    const open=a.tasks.filter((t,i)=>!S.done[a.id+i]).length;
+    return `<button class="acc" data-acc="${a.id}" aria-current="${a.id===S.acc}">
+      <span class="name">${esc(a.name)}</span>
+      <span class="meta">${chip(a.gate,GATE[a.gate])}<span class="chip plain">${open} da fare</span></span>
+      <span class="meta">${esc(a.type)}</span></button>`}).join("");
+}
+function render(){
+  renderSide();
+  const a=ACCOUNTS.find(x=>x.id===S.acc);
+  const tabs=[["briefing","Cosa fare oggi",a.tasks.filter((x,i)=>!S.done[a.id+i]).length],["segnali","Segnali",a.signals.filter(d=>d[2]!=="ok").length]];
+  if(a.google) tabs.push(["google","Google Ads",""]);
+  tabs.push(["meta","Meta Ads",""],["creativita","Creatività",a.creative&&a.creative.briefs.length?a.creative.briefs.length:""],["postclick","Post-click",a.postclick?a.postclick.quadrants.filter(q=>q[3]==="post").length:""],["misura","Misurazione",""],["test","Test",a.tests&&a.tests.running.length?a.tests.running.length:""]);
+  if(!tabs.find(t=>t[0]===S.tab)) S.tab="briefing";
+  const lock=a.blocked?["google","meta","creativita","postclick","misura","test"]:[];
+  $("#main").innerHTML=`
+   <div class="head"><h2>${esc(a.name)}</h2>${chip(a.gate,GATE[a.gate])}
+    <div class="kpis">${a.kpi.map(k=>`<div class="kpi"><span>${k[0]}</span><b>${k[1]} ${k[2]?`<span class="d-${k[3]||'ok'}">${k[2]}</span>`:""}</b></div>`).join("")}</div></div>
+   <div class="tabs" role="tablist">${tabs.map(t=>`<button class="tab" role="tab" data-tab="${t[0]}" aria-selected="${t[0]===S.tab}">${t[1]}${t[2]?`<span class="n">${t[2]}</span>`:""}${lock.includes(t[0])?'<span class="lock">bloccato</span>':""}</button>`).join("")}</div>
+   <div class="pane">${lock.includes(S.tab)?gateBanner(a)+'<p class="hint">Questa sezione si sblocca quando i Segnali tornano affidabili.</p>':pane(a)}</div>`;
+  save();
+}
+function gateBanner(a){
+  if(a.gate==="bad") return `<div class="banner bad"><b>Ottimizzazione bloccata</b><span>L'algoritmo sta imparando da segnali sbagliati. Qualsiasi modifica alle campagne peggiorerebbe le cose: prima si sistemano i segnali.</span></div>`;
+  if(a.gate==="warn") return `<div class="banner warn"><b>Segnali da verificare</b><span>Ci sono scarti o volumi sotto soglia. I suggerimenti restano attivi ma prudenti.</span></div>`;
+  return "";
+}
+function pane(a){
+  switch(S.tab){
+  case "briefing": return gateBanner(a)+a.tasks.map((t,i)=>{
+    const k=a.id+i,d=!!S.done[k],[ll,lc]=LV[t.lvl];
+    let act="";
+    if(t.ticket) act=`<button class="btn primary" data-ask="${k}" ${S.asked[k]?"disabled":""}>${S.asked[k]?"Ticket aperto":t.plat==="Sito"?"Apri ticket al team sito/CRO":"Apri ticket al team analytics"}</button>`;
+    else if(t.lvl==="senior") act=`<button class="btn primary" data-ask="${k}" ${S.asked[k]?"disabled":""}>${S.asked[k]?"In attesa del senior":"Chiedi l'ok al senior"}</button>`;
+    return `<article class="task p${t.p}${d?" done":""}">
+      <input type="checkbox" id="c-${k}" data-done="${k}" ${d?"checked":""} ${t.lvl==="senior"&&!S.asked[k]?"disabled":""} aria-label="Segna come fatto">
+      <div><label for="c-${k}" class="t-title">${esc(t.title)}</label>
+      <div class="t-row" style="margin-top:4px"><span class="lev">${t.lev}</span><span class="plat">${esc(t.plat)}</span><span class="lvl ${lc}">${ll}</span><span class="plat">Priorità ${t.p} · ${esc(t.impact)}</span></div>
+      <dl class="t-grid"><dt>Cosa succede</dt><dd>${esc(t.what)}</dd><dt>Perché</dt><dd>${esc(t.why)}</dd>
+       <dt>Come fare</dt><dd><ol>${t.how.map(h=>`<li>${esc(h)}</li>`).join("")}</ol></dd><dt>Non fare</dt><dd class="no">${esc(t.no)}</dd></dl>
+      ${act?`<div class="t-actions">${act}</div>`:""}</div></article>`}).join("")+
+    `<section class="never"><h3>Da non toccare</h3><ul>${a.frozen.map(f=>`<li>${esc(f)}</li>`).join("")}</ul></section>`;
+  case "segnali": {
+    let g="",rows="";
+    a.signals.forEach(r=>{ if(r[0]!==g){g=r[0];rows+=`<tr><td class="grp" colspan="3">${esc(g)}</td></tr>`}
+      rows+=`<tr><td>${esc(r[1])}</td><td>${chip(r[2])}</td><td>${esc(r[3])}</td></tr>`});
+    return gateBanner(a)+`<p class="hint">L'algoritmo ottimizza su quello che gli passi. Se il segnale è sbagliato, ottimizza benissimo verso l'obiettivo sbagliato.</p>
+    <div class="tw"><table><thead><tr><th>Controllo</th><th>Stato</th><th>Dettaglio</th></tr></thead><tbody>${rows}</tbody></table></div>`;}
+  case "google": { const g=a.google;
+    return gateBanner(a)+`<section class="sec"><h3>Consolidamento</h3><p class="hint">Conversioni negli ultimi 30 giorni. La linea nera è la soglia minima (30) per uno Smart Bidding stabile.</p>
+    ${tbl(["Campagna","Conv. 30g","","Proposta"],g.consolidate.map(r=>[esc(r[0]),r[1],`<div class="bar"><i class="${r[1]<30?"low":""}" style="width:${Math.min(100,r[1]/90*100)}%"></i><span class="mark" style="left:${30/90*100}%"></span></div>`,r[2]==="Accorpa"?chip("warn","Accorpa in AI Max"):r[2]==="Ok"?chip("ok","Ok"):chip("ok",r[2])]),[1])}</section>
+    <section class="sec"><h3>Target delle offerte</h3>${tbl(["Campagna","Target","Effettivo 30g","Budget speso","Diagnosi"],g.targets.map(r=>[esc(r[0]),r[1],r[2],r[3],esc(r[4])]),[2,3])}</section>
+    <section class="sec"><h3>PMax: dove va la spesa</h3>${tbl(["Canale","Quota spesa","Quota valore conv."],g.channels.map(r=>[r[0],r[1],r[2]]),[1,2])}
+    <p class="hint">YouTube e Display prendono il 17% della spesa e portano il 5% del valore: normale per la parte alta del funnel, ma da tenere d'occhio con i video verticali in arrivo.</p></section>
+    <section class="sec"><h3>Copertura asset</h3>${tbl(["Asset group","Video","Altro"],g.assets.map(r=>[esc(r[0]),r[1].includes("mancante")?chip("bad",r[1]):chip("ok",r[1]),esc(r[2])]))}</section>
+    <div class="banner info"><b>Esclusioni</b><span>${esc(g.guard)}</span></div>`;}
+  case "meta": { const m=a.meta;
+    const SEM={early:["plain","Troppo presto"],ok:["ok","Funziona"],prep:["warn","Prepara il cambio"],late:["bad","In ritardo"]};
+    const fat=m.fatigue?`<section class="sec"><h3>Affaticamento creatività</h3>
+    <p class="hint">Ogni concept è confrontato con i suoi primi 7 giorni, non con una soglia fissa di frequenza. In questo account un concept dura in media ${m.avgLife} giorni prima di calare.</p>
+    ${tbl(["Concept","Giorni","Freq. 7g","CTR vs picco","Copertura nuova","CPM vs 1ª sett.","CPA vs target","Semaforo","Cosa fare"],
+      m.fatigue.map((r,i)=>{const k=a.id+"f"+i,[c,l]=SEM[r[7]];
+        const btn=(r[7]==="prep"||r[7]==="late")?`<div style="margin-top:6px"><button class="btn primary" data-send="${k}" ${S.sent[k]?"disabled":""}>${S.sent[k]?"Brief inviato":"Invia brief sostitutivo"}</button></div>`:"";
+        return [esc(r[0]),r[1],r[2],r[3],r[4],r[5],r[6],`<span class="chip ${c}">${l}</span>`,esc(r[8])+btn]}),[1,2,3,4,5,6])}
+    <div class="tw"><table><thead><tr><th>Semaforo</th><th>Quando</th></tr></thead><tbody>
+     <tr><td><span class="chip plain">Troppo presto</span></td><td>Meno di 7 giorni, ad set in apprendimento, oppure CTR stabile anche con frequenza alta</td></tr>
+     <tr><td><span class="chip warn">Prepara il cambio</span></td><td>CTR −20% dal picco, frequenza in salita, copertura nuova in calo, CPA ancora nel target</td></tr>
+     <tr><td><span class="chip bad">In ritardo</span></td><td>CTR −30% o più, CPM in salita, CPA oltre il target del 20% per 3 giorni consecutivi</td></tr>
+    </tbody></table></div>
+    <p class="hint">CPM in salita con CTR stabile è asta o stagionalità, non affaticamento. Il cambio si fa affiancando concept nuovi, non spegnendo il vecchio.</p></section>`:"";
+    return gateBanner(a)+fat+`<section class="sec"><h3>Struttura</h3><p class="hint">Meno campagne, più dati per campagna. Il targeting lo fanno le creatività.</p>${tbl(["Indicatore","Valore","Esito"],m.structure.map(r=>[r[0],r[1],r[2].startsWith("Ok")?chip("ok",r[2]):chip("warn",r[2])]),[1])}</section>
+    <section class="sec"><h3>Miglioramenti automatici Advantage+ creative</h3>${tbl(["Miglioramento","Stato","Indicazione"],m.enh.map(r=>[r[0],`<span class="toggle ${r[1]}">${r[1]==="on"?"Attivo":"Disattivo"}</span>`,r[2].startsWith("Disattiva")?chip("bad",r[2]):chip("ok",r[2])]))}</section>
+    <section class="sec"><h3>Esclusioni e brand safety</h3>${tbl(["Controllo","Stato attuale",""],m.excl.map(r=>[r[0],esc(r[1]),chip(r[2])]))}</section>`;}
+  case "creativita": { const c=a.creative;
+    const conc=c.grid.flat().filter(x=>x>0).length, need=Math.max(6,c.angles.length);
+    return gateBanner(a)+`<section class="sec"><h3>Mappa della diversità</h3><p class="hint">Numero di creatività attive per angolo e formato. Le celle rosse sono i buchi: lì il sistema non ha niente da mostrare a un pubblico diverso.</p>
+    <div class="tw"><table class="matrix"><thead><tr><th>Angolo</th>${c.formats.map(f=>`<th>${f}</th>`).join("")}</tr></thead><tbody>
+    ${c.angles.map((an,i)=>`<tr><td>${esc(an)}</td>${c.grid[i].map(v=>`<td><span class="cell ${v?"has":"gap"}">${v}</span></td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    <p class="hint">Combinazioni coperte: ${conc} su ${c.angles.length*c.formats.length}.</p></section>
+    <section class="sec"><h3>Brief per coprire i buchi</h3>
+    ${c.briefs.length?c.briefs.map((b,i)=>{const k=a.id+"b"+i;return `<div class="task p3" style="grid-template-columns:minmax(0,1fr)"><div><div class="t-row"><span class="t-title">${esc(b.t)}</span><span class="plat">${esc(b.f)}</span></div><p style="margin-top:6px">${esc(b.b)}</p>
+     <div class="t-actions"><button class="btn primary" data-send="${k}" ${S.sent[k]?"disabled":""}>${S.sent[k]?"Inviato al tool creativo":"Invia al tool creativo"}</button></div></div></div>`}).join(""):'<p class="hint">Nessun buco da coprire questa settimana.</p>'}</section>
+    ${c.concepts.length?`<section class="sec"><h3>Risultati per concept</h3><p class="hint">Si giudica il concept, non il singolo annuncio.</p>${tbl(["Concept","Quota spesa","ROAS","Indicazione"],c.concepts.map(r=>[esc(r[0]),r[1],r[2],esc(r[3])]),[1,2])}</section>`:""}`;}
+  case "postclick": { const p=a.postclick;
+    const Q={post:["bad","Problema dopo il clic","Team sito / CRO"],ad:["warn","Annuncio poco attraente","Advertiser: creatività"],mid:["plain","Nella media","Nessuno"],scale:["ok","Funziona","Senior: più budget"],bottom:["warn","Pubblico o offerta","Advertiser + senior"]};
+    let funnel="";
+    if(p.funnel){const f=p.funnel;
+      funnel=`<section class="sec"><h3>Funnel del sito</h3><p class="hint">${esc(f.title)}. Ogni step in percentuale sulle sessioni.</p>
+      ${tbl(["Step","Ultimi 7 giorni","Prima","Variazione",""],f.steps.map((s,i)=>{const d=s[2]?((s[1]-s[2])/s[2]*100):0,bad=d<=-25;
+        return [s[0],String(s[1]).replace(".",",")+"%",String(s[2]).replace(".",",")+"%",i?`<span class="${bad?"d-bad":""}">${d>0?"+":""}${Math.round(d)}%</span>`:"—",`<div class="bar"><i class="${bad?"low":""}" style="width:${s[1]}%"></i></div>`]}),[1,2,3])}
+      <div class="banner warn">${esc(f.note)}</div></section>`}
+    return gateBanner(a)+`<section class="sec"><h3>Dove sta il problema</h3><p class="hint">CTR e tasso di conversione confrontati con la mediana dell'account. Se le persone cliccano ma non convertono, il problema non è l'annuncio.</p>
+    ${tbl(["Campagna / creatività","CTR vs mediana","Conversione vs mediana","Diagnosi","Chi agisce"],p.quadrants.map(q=>{const[c,l,w]=Q[q[3]];return [esc(q[0]),q[1],q[2],`<span class="chip ${c}">${l}</span><div class="hint" style="margin-top:4px">${esc(q[4])}</div>`,w]}),[1,2])}</section>
+    <section class="sec"><h3>Annuncio ↔ landing page</h3><p class="hint">Claude legge l'annuncio e la pagina e verifica che offerta, prodotto, prezzo e call to action coincidano.</p>
+    ${tbl(["Annuncio","Landing","Esito","Dettaglio"],p.match.map(m=>[esc(m[0]),`<code>${esc(m[1])}</code>`,chip(m[2],m[2]==="ok"?"Coerente":m[2]==="warn"?"Parziale":"Incoerente"),esc(m[3])]))}</section>
+    ${funnel}
+    <section class="sec"><h3>Velocità delle landing (mobile)</h3>${tbl(["Pagina","LCP","INP","Esito"],p.vitals.map(v=>[`<code>${esc(v[0])}</code>`,v[1],v[2],chip(v[3],v[3]==="ok"?"Buona":v[3]==="warn"?"Da migliorare":"Lenta")]),[1,2])}
+    ${tbl(["Segnale","Valore","Stato","Lettura"],[[esc(p.lpRatio[0]),p.lpRatio[1],chip(p.lpRatio[2]),esc(p.lpRatio[3])]],[1])}</section>`;}
+  case "test": { const t=a.tests;
+    return gateBanner(a)+`<section class="sec"><h3>In corso</h3>
+    ${t.running.length?t.running.map(r=>`<div class="task p2" style="grid-template-columns:minmax(0,1fr)"><div>
+      <div class="t-row"><span class="t-title">${esc(r.name)}</span><span class="lev">${r.type}</span><span class="plat">${r.plat} · fine ${r.end}</span></div>
+      <div class="row" style="margin-top:8px"><div class="bar" style="flex:1"><i style="width:${r.pct}%"></i></div><span class="plat">${r.pct}% della durata</span></div>
+      <dl class="t-grid"><dt>Ipotesi</dt><dd>${esc(r.hyp)}</dd><dt>Metrica</dt><dd>${esc(r.metric)}</dd><dt>Decisione</dt><dd>${esc(r.rule)}</dd><dt>Stato</dt><dd>${esc(r.status)}</dd><dt>Non fare</dt><dd class="no">Non modificare budget, pubblico o creatività delle campagne in test e non chiuderlo in anticipo.</dd></dl></div></div>`).join(""):'<p class="hint">Nessun test in corso.</p>'}</section>
+    <section class="sec"><h3>Proposti</h3><p class="hint">Il tool propone un test solo se budget e volumi bastano a dare una risposta.</p>
+    ${tbl(["Test","Tipo","Perché","Ammissibilità"],t.proposed.map(p=>[esc(p[0]),p[1],esc(p[2]),chip(p[3],p[4])]))}</section>
+    ${t.done.length?`<section class="sec"><h3>Registro</h3>${tbl(["Test","Esito","Decisione"],t.done.map(d=>[esc(d[0]),esc(d[1]),esc(d[2])]))}</section>`:""}
+    <div class="banner info">${esc(t.factor)}</div>`;}
+  case "misura": return gateBanner(a)+`<p class="hint">Quanto di quello che le piattaforme si attribuiscono sarebbe successo comunque.</p>
+    ${tbl(["Controllo","Valore","Stato","Cosa fare"],a.measure.rows.map(r=>[esc(r[0]),r[1],chip(r[2]),esc(r[3])]),[1])}`;
+  }
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-acc],[data-tab],[data-ask],[data-send]"); if(!b) return;
+  if(b.dataset.acc){S.acc=b.dataset.acc;S.tab="briefing";render()}
+  else if(b.dataset.tab){S.tab=b.dataset.tab;render()}
+  else if(b.dataset.ask){S.asked[b.dataset.ask]=1;render();toast("Richiesta inviata")}
+  else if(b.dataset.send){S.sent[b.dataset.send]=1;render();toast("Brief inviato al tool creativo")}
+});
+document.addEventListener("change",e=>{const k=e.target.dataset.done;if(k){S.done[k]=e.target.checked;render()}});
+render();
+</script>

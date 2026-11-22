@@ -1,0 +1,67 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_activate_entity",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_boost_ig_post",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_create",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_create_feed_rule",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_create_product_feed",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_create_product_feed_upload_session",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_create_product_set",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_create_video_template",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_delete_product",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_event_source_connect",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_event_source_disconnect",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_product_create",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_product_feed_delete",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_product_feed_delete_rule",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_product_set_delete",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_update_catalog",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_update_feed_rule",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_update_product",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_update_product_feed",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_catalog_update_product_set",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_create_ad",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_create_ad_set",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_create_campaign",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_create_creative",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_create_custom_audience",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_create_upload_url",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_creative_create_image_variations",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_creative_delete",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_creative_update",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_creative_update_image_elements",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_creative_upload_media",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_dataset_create",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_dataset_update_automatic_matching",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_delete_custom_audience",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_duplicate_entity",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_experiment_abtest_create_test",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_experiment_abtest_update_test",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_experiment_lift_create_test",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_finalize_upload",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_permission_preview_set_asset_permissions",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_pixel_event_create",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_pixel_event_delete",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_pixel_event_update",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_pixel_parameter_create",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_pixel_parameter_delete",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_pixel_parameter_update",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_update_custom_audience",
+      "mcp__940c9077-62af-4ca3-ba3f-d0ea9270d462__ads_update_entity"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python hooks/blocca_scritture.py"
+          }
+        ]
+      }
+    ]
+  }
+}

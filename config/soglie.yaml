@@ -1,0 +1,55 @@
+# Soglie di analisi. Valori di partenza: vanno calibrati sullo storico di ogni account
+# (sovrascrivibili per cliente in config/clienti/<cliente>.yaml).
+
+segnali:
+  scarto_max_piattaforma_vs_backend_pct: 10
+  copertura_capi_min_pct: 80
+  calo_consenso_alert_punti: 10
+  customer_match_max_giorni: 30
+
+volume:
+  conversioni_min_mese_per_campagna: 30
+  giorni_min_prima_di_giudicare: 7
+
+creativita_semaforo:          # confronto di ogni concept con i suoi primi 7 giorni
+  troppo_presto:
+    giorni_attivo_max: 7
+    oppure_in_apprendimento: true
+  prepara_cambio:
+    ctr_calo_dal_picco_pct: 20
+    frequenza_7g_in_salita: true
+    copertura_nuova_in_calo: true
+  in_ritardo:
+    ctr_calo_dal_picco_pct: 30
+    cpm_in_salita: true
+    cpa_oltre_target_pct: 20
+    giorni_consecutivi: 3
+  nota: "CPM in salita con CTR stabile = asta/stagionalità, non affaticamento"
+
+creativita_diversita:
+  concept_min_per_campagna: 6
+  quota_spesa_max_singolo_concept_pct: 50
+
+google:
+  impression_share_persa_budget_alert_pct: 20
+  target_troppo_alto_se_budget_speso_sotto_pct: 70
+
+post_click:
+  ctr_alto_vs_mediana_pct: 20          # sopra la mediana dell'account di almeno il 20%
+  conv_rate_basso_vs_mediana_pct: 30   # sotto la mediana dell'account di almeno il 30%
+  rapporto_lp_view_su_clic_min_pct: 70 # Meta: visualizzazioni landing / clic sul link
+  calo_conv_rate_improvviso_pct: 30    # in 7 giorni con CTR stabile
+  lcp_mobile_max_s: 2.5
+  inp_mobile_max_ms: 200
+  conv_mobile_vs_desktop_min_pct: 50
+
+test:
+  confidenza_min_pct: 90
+  durata_min_giorni: 14
+  durata_max_giorni: 42
+  conversioni_min_per_variante: 100
+  differenza_minima_rilevabile_max_pct: 15   # se il test non può rilevare almeno il 15%, non proporlo
+
+misurazione:
+  quota_brand_in_pmax_alert_pct: 15
+  quota_clienti_esistenti_meta_alert_pct: 25

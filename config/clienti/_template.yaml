@@ -1,0 +1,13 @@
+# Copiare in config/clienti/<cliente>.yaml per ogni cliente pilota.
+cliente: NOME_CLIENTE
+google_ads_customer_id: ""      # senza trattini
+meta_ad_account_id: ""          # act_<id>
+ga4_property_id: ""             # serve dalla fase 03b
+obiettivo: vendita_con_valore   # vendita_con_valore | lead_qualificato
+target:
+  roas: null
+  cpa: null
+brand:
+  termini: []                   # per brand in PMax (fase 04)
+  linee_guida: ""
+durata_media_concept_giorni: null

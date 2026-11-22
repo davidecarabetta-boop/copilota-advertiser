@@ -1,0 +1,17 @@
+cliente: RATTIX
+google_ads_customer_id: "3107401529"   # Rattix (Italia). L'altro account, Rattix Motors 6467759995, è la Spagna
+meta_ad_account_id: act_347410153   # Ratti Auto: unico account Meta Italia (auto + moto)
+# Esclusi (Spagna, campagne ES_spa): Google 6467759995 Rattix Motors,
+# Meta act_2607401729652023 Rattix Motors, act_1723983254893161 Rattix Motors - SearchOn
+perimetro:                      # tutto l'Italia: auto, moto, noleggio (naming <paese>|<funnel>|<LINEA>|...)
+  linee: [AUTO_B2C, AUTO_C2B, MOTO_B2C, RENT_B2C, RENT_NLT]
+  paesi: [IT]
+ga4_property_id: ""
+obiettivo: lead_qualificato     # tutte le campagne Google sono Max conversioni senza valore, conversioni = lead form/contatti
+target:
+  roas: null
+  cpa: null
+brand:
+  termini: [ratti, rattix]
+  linee_guida: ""
+durata_media_concept_giorni: null
