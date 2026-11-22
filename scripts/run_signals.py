@@ -8,7 +8,7 @@ from pathlib import Path
 
 from copilota.config import load_thresholds
 from copilota.data import SAMPLE_DIR, CsvSource
-from copilota.signals import Status, check_account, gate, ticket_text
+from copilota.signals import Status, check_account, gate, quality_measured, ticket_text
 
 ICON = {Status.GREEN: "[VERDE] ", Status.YELLOW: "[GIALLO]", Status.RED: "[ROSSO] "}
 
@@ -20,6 +20,9 @@ def main() -> None:
         esito = gate(checks)
         print(f"\n=== {account['name']} - {account['platform']} {account['account_id']}: "
               f"{esito.value.upper()} ===")
+        if not quality_measured(source, account):
+            print("  ATTENZIONE: qualità dei lead non misurata. L'esito dice se tracciamento e "
+                  "impostazioni reggono,\n  non se l'account sta portando clienti.")
         for c in checks:
             print(f"  {ICON[c.status]} {c.group} / {c.name}: {c.detail}")
         if esito is Status.RED:

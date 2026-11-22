@@ -30,7 +30,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "capi_coverage_pct": _opt(float), "consent_mode_v2": _bool,
         "consent_rate_pct": _opt(float), "consent_rate_prev_pct": _opt(float),
         "optimization_event": str, "crm_quality_feedback": _bool,
+        "crm_last_upload": _opt(date.fromisoformat),
         "customer_match_updated": _opt(date.fromisoformat),
+    },
+    # Totali del periodo per azione di conversione (Google): per capire su cosa si ottimizza
+    "ga_conversion_actions": {
+        "account_id": str, "conversion_action": str, "category": str, "conversions": float,
     },
     "ga_campaign_daily": {
         "date": date.fromisoformat, "account_id": str, "campaign_id": str,
@@ -43,9 +48,20 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "ad_id": str, "ad_name": str, "concept": str, "spend": float, "impressions": int,
         "reach": int, "frequency": float, "clicks": int, "leads": float,
     },
+    "meta_campaigns": {
+        "account_id": str, "campaign_id": str, "campaign_name": str,
+        "objective": str, "status": str,
+    },
+    # Export CRM del cliente (la verità): conteggi per giorno di arrivo del lead e piattaforma.
+    # Specifica per il cliente in docs/export_crm.md.
     "backend_daily": {
         "date": date.fromisoformat, "client": str, "source": str,
-        "leads": int, "qualified_leads": int,
+        "leads": int, "qualified_leads": _opt(int), "contracts": _opt(int),
+    },
+    # Conversioni offline ricevute dalla piattaforma (Salesforce -> Google, CRM -> Meta via CAPI):
+    # quello che l'algoritmo vede davvero. stage = qualified | converted, per data di conversione.
+    "offline_conversions_daily": {
+        "date": date.fromisoformat, "account_id": str, "stage": str, "conversions": float,
     },
 }
 

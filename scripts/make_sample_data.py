@@ -5,6 +5,7 @@ Account finto "DEMO", sul modello di Rattix (lead gen). Problemi messi apposta:
 - Meta: la piattaforma conta ~2,2 volte i lead del CRM (deduplica Pixel/CAPI rotta) -> rosso.
 - Meta: copertura CAPI 65% (sotto l'80%) -> giallo.
 - Meta: pubblico Customer Match non aggiornato da settembre -> giallo.
+- Google: il caricamento offline perde ~30% dei lead qualificati del CRM -> giallo.
 - Meta: un annuncio con frequenza alta e CTR in calo (servirà alla fase 03).
 
 Deterministico: rilanciarlo produce sempre gli stessi file.
@@ -60,11 +61,13 @@ tracking = [
     {"account_id": GOOGLE, "enhanced_conversions": "true", "capi_active": "",
      "capi_coverage_pct": "", "consent_mode_v2": "true", "consent_rate_pct": "72",
      "consent_rate_prev_pct": "74", "optimization_event": "lead_form",
-     "crm_quality_feedback": "true", "customer_match_updated": "2026-11-10"},
+     "crm_quality_feedback": "true", "crm_last_upload": "2026-11-20",
+     "customer_match_updated": "2026-11-10"},
     {"account_id": META, "enhanced_conversions": "", "capi_active": "true",
      "capi_coverage_pct": "65", "consent_mode_v2": "", "consent_rate_pct": "",
      "consent_rate_prev_pct": "", "optimization_event": "lead",
-     "crm_quality_feedback": "true", "customer_match_updated": "2026-09-01"},
+     "crm_quality_feedback": "true", "crm_last_upload": "2026-11-20",
+     "customer_match_updated": "2026-09-01"},
 ]
 
 # Google: (id, nome, tipo, budget, costo/giorno, clic/giorno, conversioni/giorno)
@@ -118,12 +121,29 @@ for d in days():
     g = round(g_conv_by_day[d] * rng.uniform(0.9, 1.0))  # Google allineato (scarto < 10%)
     m = round(m_leads_by_day[d] / 2.2)  # Meta gonfiato: deduplica rotta
     backend.append({"date": d.isoformat(), "client": "DEMO", "source": "google",
-                    "leads": g, "qualified_leads": round(g * 0.6)})
+                    "leads": g, "qualified_leads": round(g * 0.6),
+                    "contracts": round(g * 0.08)})
     backend.append({"date": d.isoformat(), "client": "DEMO", "source": "meta",
-                    "leads": m, "qualified_leads": round(m * 0.4)})
+                    "leads": m, "qualified_leads": round(m * 0.4),
+                    "contracts": round(m * 0.05)})
 
 write("accounts", accounts)
 write("tracking_status", tracking)
 write("ga_campaign_daily", ga_rows)
 write("meta_ad_daily", meta_rows)
+write("meta_campaigns", [{"account_id": META, "campaign_id": "mc1",
+                         "campaign_name": "IT|LEAD|AUTO_B2C", "objective": "OUTCOME_LEADS",
+                         "status": "ACTIVE"}])
+write("ga_conversion_actions", [
+    {"account_id": GOOGLE, "conversion_action": "invio_form", "category": "SUBMIT_LEAD_FORM",
+     "conversions": sum(g_conv_by_day.values())},
+    {"account_id": GOOGLE, "conversion_action": "chiamate", "category": "PHONE_CALL_LEAD",
+     "conversions": 12},
+])
 write("backend_daily", backend)
+# Google riceve offline solo ~70% dei qualificati del CRM (caricamento che perde dati) -> giallo
+write("offline_conversions_daily", [
+    {"date": b["date"], "account_id": GOOGLE, "stage": "qualified",
+     "conversions": round(b["qualified_leads"] * 0.7)}
+    for b in backend if b["source"] == "google"
+])

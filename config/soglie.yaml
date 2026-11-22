@@ -6,6 +6,14 @@ segnali:
   scarto_rosso_piattaforma_vs_backend_pct: 30     # oltre: rosso
   rapporto_rosso_piattaforma_su_backend: 2        # piattaforma >= 2x backend: deduplica rotta, rosso
   finestra_riconciliazione_giorni: 30
+  giorni_recenti: 7                               # periodo recente per l'andamento conversioni
+  calo_conversioni_rosso_pct: 70                  # ultimi 7 giorni vs prima: oltre, rosso
+  zero_conversioni_se_spesa_oltre_cpa_x: 2        # zero conversioni ieri è rosso se spesa >= 2 CPA
+  crm_max_giorni_senza_caricamento: 7             # oltre: la qualità dal CRM non arriva più, rosso
+  quota_conversioni_non_lead_giallo_pct: 5        # conversioni contate che non sono lead
+  quota_conversioni_non_lead_rosso_pct: 30
+  calo_tasso_qualificati_rosso_pct: 30            # lead qualificati / lead, ultimi 7 giorni vs prima
+  scarto_offline_vs_crm_giallo_pct: 20            # qualificati nel CRM non caricati sulla piattaforma
   copertura_capi_min_pct: 80
   calo_consenso_alert_punti: 10
   customer_match_max_giorni: 30

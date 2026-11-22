@@ -12,7 +12,10 @@ END = date(2026, 11, 21)
 
 class FakeSource:
     def __init__(self, **tables):
-        self.tables = {"tracking_status": [], "backend_daily": [], **tables}
+        self.tables = {"tracking_status": [], "backend_daily": [], "meta_campaigns": [],
+                       "ga_conversion_actions": [],
+                       "offline_conversions_daily": [],
+                       **tables}
 
     def read(self, table):
         return self.tables.get(table, [])
@@ -26,7 +29,8 @@ def tracking(**kw):
     base = {"account_id": "g", "enhanced_conversions": True, "capi_active": None,
             "capi_coverage_pct": None, "consent_mode_v2": True, "consent_rate_pct": 70.0,
             "consent_rate_prev_pct": 72.0, "optimization_event": "lead_form",
-            "crm_quality_feedback": True, "customer_match_updated": END}
+            "crm_quality_feedback": True, "crm_last_upload": END,
+            "customer_match_updated": END}
     return {**base, **kw}
 
 
@@ -36,13 +40,15 @@ def google_rows(conv_per_day=2.0, last_day_conv=None, days=30):
         d = END - timedelta(days=days - 1 - i)
         c = last_day_conv if (d == END and last_day_conv is not None) else conv_per_day
         rows.append({"date": d, "account_id": "g", "campaign_name": "c1", "cost": 50.0,
+                     "bidding_strategy": "MAXIMIZE_CONVERSIONS",
                      "conversions": c})
     return rows
 
 
 def backend(total, days=30):
     return [{"date": END - timedelta(days=i), "client": "X", "source": "google",
-             "leads": total / days} for i in range(days)]
+             "leads": total / days, "qualified_leads": total / days / 2, "contracts": 0}
+            for i in range(days)]
 
 
 def status_of(checks, name):
@@ -67,7 +73,28 @@ def test_all_good_is_green():
 
 
 def test_zero_conversions_last_day_is_red():
-    assert status_of(run(rows=google_rows(last_day_conv=0)), "Conversione principale") is Status.RED
+    rows = google_rows(conv_per_day=4, last_day_conv=0)  # CPA ~13 €, spesa 50 € > 2 CPA
+    assert status_of(run(rows=rows), "Conversione principale") is Status.RED
+
+
+def test_zero_conversions_with_small_spend_is_not_red():
+    rows = google_rows(conv_per_day=2, last_day_conv=0)  # CPA ~26 €, spesa 50 € < 2 CPA
+    assert status_of(run(rows=rows), "Conversione principale") is Status.GREEN
+
+
+def test_conversion_crash_is_red():
+    rows = google_rows(conv_per_day=5)
+    for r in rows[-7:]:
+        r["conversions"] = 0.5
+    assert status_of(run(rows=rows), "Andamento conversioni") is Status.RED
+
+
+def test_non_conversion_campaigns_ignored_for_volume():
+    rows = google_rows(conv_per_day=2) + [
+        {**r, "campaign_name": "video", "bidding_strategy": "TARGET_CPM", "conversions": 0}
+        for r in google_rows()
+    ]
+    assert status_of(run(rows=rows), "Conversioni per campagna") is Status.GREEN
 
 
 @pytest.mark.parametrize("crm,expected", [
@@ -119,3 +146,61 @@ def test_client_override(tmp_path):
     demo = tmp_path / "clienti" / "demo.yaml"
     demo.write_text("soglie:\n  volume:\n    b: 5\n", encoding="utf-8")
     assert load_thresholds("DEMO", tmp_path) == {"volume": {"a": 1, "b": 5}}
+
+
+def test_crm_upload_stopped_is_red():
+    track = tracking(crm_last_upload=END - timedelta(days=30))
+    assert status_of(run(track=track), "Conversione di ottimizzazione") is Status.RED
+
+
+def test_non_lead_conversions_share():
+    def actions(junk):
+        return [{"account_id": "g", "conversion_action": "form", "category": "SUBMIT_LEAD_FORM",
+                 "conversions": 100 - junk},
+                {"account_id": "g", "conversion_action": "YouTube", "category": "ENGAGEMENT",
+                 "conversions": junk}]
+    for junk, expected in [(2, Status.GREEN), (19, Status.YELLOW), (40, Status.RED)]:
+        src = FakeSource(ga_campaign_daily=google_rows(), tracking_status=[tracking()],
+                         backend_daily=backend(60), ga_conversion_actions=actions(junk))
+        assert status_of(check_account(src, ACCOUNT, TH), "Conversioni non-lead") is expected
+
+
+def test_lead_quality():
+    assert status_of(run(), "Qualità dei lead") is Status.GREEN
+    assert status_of(run(back=[]), "Qualità dei lead") is Status.YELLOW
+    back = backend(60)
+    for b in back[:7]:  # ultimi 7 giorni: qualificati crollati
+        b["qualified_leads"] = 0
+    assert status_of(run(back=back), "Qualità dei lead") is Status.RED
+
+
+def offline(per_day, days=30):
+    return [{"date": END - timedelta(days=i), "account_id": "g", "stage": "qualified",
+             "conversions": per_day} for i in range(days)]
+
+
+def run_with(**tables):
+    base = dict(ga_campaign_daily=google_rows(), tracking_status=[tracking()],
+                backend_daily=backend(60))
+    return check_account(FakeSource(**{**base, **tables}), ACCOUNT, TH)
+
+
+def test_quality_from_offline_when_no_crm():
+    checks = run_with(backend_daily=[], offline_conversions_daily=offline(1))
+    q = next(c for c in checks if c.name == "Qualità dei lead")
+    assert q.status is Status.GREEN and "conversioni offline" in q.detail
+
+
+def test_offline_vs_crm_alignment():
+    # CRM: 1 qualificato al giorno; piattaforma: 0.5 -> perde il 50%
+    assert status_of(run_with(offline_conversions_daily=offline(0.5)),
+                     "Caricamento offline vs CRM") is Status.YELLOW
+    assert status_of(run_with(offline_conversions_daily=offline(1)),
+                     "Caricamento offline vs CRM") is Status.GREEN
+
+
+def test_last_upload_taken_from_offline_data():
+    # tracking dice fermo da 30 giorni, ma ieri sono arrivate conversioni offline: non rosso
+    track = tracking(crm_last_upload=END - timedelta(days=30))
+    checks = run_with(tracking_status=[track], offline_conversions_daily=offline(1, days=2))
+    assert status_of(checks, "Conversione di ottimizzazione") is Status.GREEN
