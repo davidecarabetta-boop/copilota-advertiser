@@ -6,7 +6,8 @@ Account finto "DEMO", sul modello di Rattix (lead gen). Problemi messi apposta:
 - Meta: copertura CAPI 65% (sotto l'80%) -> giallo.
 - Meta: pubblico Customer Match non aggiornato da settembre -> giallo.
 - Google: il caricamento offline perde ~30% dei lead qualificati del CRM -> giallo.
-- Meta: un annuncio con frequenza alta e CTR in calo (servirà alla fase 03).
+- Meta: concept "finanziamento" (m4) affaticato: CTR in calo, frequenza, CPM e CPA in
+  salita -> semaforo "in ritardo". 5 concept sui 6 minimi -> diversità bassa.
 
 Deterministico: rilanciarlo produce sempre gli stessi file.
 Uso: .venv/Scripts/python scripts/make_sample_data.py
@@ -105,8 +106,9 @@ for i, d in enumerate(days()):
         tired = ad == "m4"
         f = freq + (i * 0.12 if tired else i * 0.01)
         ctr_d = ctr * (1 - 0.015 * i) if tired else ctr
-        impr = round(noisy(spend * 1000 / 9))
-        n = count(leads)
+        cpm = 9 * (1 + 0.012 * i) if tired else 9  # m4: asta più cara mentre si stanca
+        impr = round(noisy(spend * 1000 / cpm))
+        n = count(leads * (1 - 0.025 * i) if tired else leads)
         meta_rows.append({
             "date": d.isoformat(), "account_id": META, "campaign_id": "mc1",
             "adset_id": "ms1" if ad in ("m1", "m2", "m3", "m4") else "ms2", "ad_id": ad,
@@ -139,6 +141,19 @@ write("ga_conversion_actions", [
      "conversions": sum(g_conv_by_day.values())},
     {"account_id": GOOGLE, "conversion_action": "chiamate", "category": "PHONE_CALL_LEAD",
      "conversions": 12},
+])
+write("creative_concepts", [
+    {"ad_id": "m1", "concept": "garanzia", "angle": "servizio e garanzia", "format": "video",
+     "confirmed": "true"},
+    {"ad_id": "m2", "concept": "garanzia", "angle": "servizio e garanzia",
+     "format": "carosello", "confirmed": "true"},
+    {"ad_id": "m3", "concept": "permuta", "angle": "problema da risolvere", "format": "statico",
+     "confirmed": "true"},
+    {"ad_id": "m4", "concept": "finanziamento", "angle": "offerta", "format": "statico",
+     "confirmed": "true"},
+    {"ad_id": "m5", "concept": "moto", "angle": "prova", "format": "video", "confirmed": "true"},
+    {"ad_id": "m6", "concept": "noleggio", "angle": "offerta", "format": "statico",
+     "confirmed": "true"},
 ])
 write("backend_daily", backend)
 # Google riceve offline solo ~70% dei qualificati del CRM (caricamento che perde dati) -> giallo

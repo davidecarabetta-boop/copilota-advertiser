@@ -52,6 +52,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "account_id": str, "campaign_id": str, "campaign_name": str,
         "objective": str, "status": str,
     },
+    # Annuncio -> concept (cosa si promuove), angolo (il messaggio), formato. Proposto dai nomi
+    # e dalle creatività, confermato dall'advertiser (confirmed).
+    "creative_concepts": {
+        "ad_id": str, "concept": str, "angle": str, "format": str, "confirmed": _bool,
+    },
     # Export CRM del cliente (la verità): conteggi per giorno di arrivo del lead e piattaforma.
     # Specifica per il cliente in docs/export_crm.md.
     "backend_daily": {

@@ -36,9 +36,14 @@ creativita_semaforo:          # confronto di ogni concept con i suoi primi 7 gio
     cpa_oltre_target_pct: 20
     giorni_consecutivi: 3
   nota: "CPM in salita con CTR stabile = asta/stagionalità, non affaticamento"
+  salita_pct: 10                 # "in salita" = ultimi 7 giorni oltre il 10% sopra il periodo di confronto
+  impressioni_min_finestra: 1000 # sotto, CTR troppo rumoroso: "dati insufficienti"
+  attivo_se_spesa_ultimi_giorni: 3
 
 creativita_diversita:
   concept_min_per_campagna: 6
+  angoli_min_per_campagna: 3     # concept diversi con lo stesso messaggio non sono diversità
+  formati_min_per_campagna: 2
   quota_spesa_max_singolo_concept_pct: 50
 
 google:
