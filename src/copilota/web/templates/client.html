@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ slug | upper }} · Copilota Advertiser{% endblock %}
+{% block crumbs %}<span class="sub">{{ slug | upper }} · dati fino al {{ updated.strftime('%d/%m/%Y') if updated else '—' }}</span>{% endblock %}
+{% block body %}
+{% if msg %}<div class="banner ok" role="status">{{ msg }}</div>{% endif %}
+{% if al %}<div class="banner warn">Vista come al <b>{{ updated.strftime('%d/%m/%Y') }}</b>: tutto è calcolato sui dati fino a quel giorno. <a href="/c/{{ slug }}">Torna a oggi</a></div>{% endif %}
+
+<nav class="nav" aria-label="Dati da inserire a mano">
+  <a class="btn" href="/c/{{ slug }}/crm">Export CRM</a>
+  <a class="btn" href="/c/{{ slug }}/concetti">Concept creativi</a>
+  <a class="btn" href="/c/{{ slug }}/tracciamento">Stato del tracciamento</a>
+  <form method="get" style="display:flex;gap:6px;align-items:center;margin-left:auto">
+    <label style="display:flex;gap:6px;align-items:center;font-weight:400">Vedi come al
+      <input type="date" name="al" value="{{ al or '' }}"></label>
+    <button class="btn" type="submit">Aggiorna</button>
+  </form>
+</nav>
+
+{% for v in views %}
+<section class="card" aria-labelledby="acc-{{ v.account.account_id }}">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <h2 id="acc-{{ v.account.account_id }}">{{ v.account.platform | capitalize }} · {{ v.account.name }}</h2>
+    <span class="chip {{ v.gate.value }}">Segnali {{ v.gate.value }}</span>
+    <span class="muted">{{ v.account.account_id }}</span>
+  </div>
+
+  {% if not v.quality %}
+  <div class="banner warn"><b>Qualità dei lead non misurata.</b> L'esito dice se tracciamento e impostazioni reggono, non se l'account porta clienti. Carica l'<a href="/c/{{ slug }}/crm">export CRM</a>.</div>
+  {% endif %}
+
+  {% if v.ticket %}
+  <div class="banner bad"><b>Segnali rossi: si apre solo il ticket.</b> Nessun'altra modifica sull'account finché non è risolto.</div>
+  <details><summary>Testo del ticket per il team analytics</summary><pre>{{ v.ticket }}</pre></details>
+  {% endif %}
+
+  <h3>Segnali</h3>
+  <ul class="checks">
+    {% for c in v.checks %}
+    <li><span class="chip {{ c.status.value }}">{{ c.status.value }}</span>
+      <span class="what">{{ c.group }} · {{ c.name }}</span>
+      <span class="detail">{{ c.detail }}</span></li>
+    {% endfor %}
+  </ul>
+
+  {% if v.account.platform == 'meta' %}
+  <h3>Creatività</h3>
+  {% if v.gate.value == 'rosso' %}<p class="muted">Diagnosi visibili per controllo e confronto col senior: con Segnali rossi non vanno all'advertiser.</p>{% endif %}
+  {% for m in v.map %}
+  {% set ev = m.evidence %}
+  <div class="card" style="background:var(--sunk);border:0">
+    <p><b>{{ ev.campagna }}</b> · {{ ev.concept_attivi }} concept attivi negli ultimi 7 giorni
+      {% if ev.concept_da_confermare %}<span class="chip giallo">concept da confermare</span>{% endif %}</p>
+    {% if ev.matrice %}
+    <div class="tablewrap"><table class="matrix">
+      <caption class="muted" style="text-align:left;caption-side:top;padding-bottom:4px">Mappa della diversità: concept attivi per angolo × formato</caption>
+      <thead><tr><th>Angolo</th>{% for f in ev.formati %}<th>{{ f }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for a in ev.angoli %}<tr><th scope="row" style="text-transform:none;font-family:var(--f-body);font-size:13px;color:var(--fg)">{{ a }}</th>
+        {% for f in ev.formati %}<td>{{ ev.matrice[a].get(f, '') }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+    <div class="tablewrap"><table>
+      <thead><tr><th>Concept</th><th>Semaforo</th><th class="num">Quota spesa 7g</th></tr></thead>
+      <tbody>{% for c, s in ev.semaforo.items() %}<tr><td>{{ c }}</td>
+        <td><span class="chip {{ {'in ritardo':'rosso','prepara il cambio':'giallo','ok':'verde'}.get(s, 'neutral') }}">{{ s }}</span></td>
+        <td class="num">{{ '%.0f%%' % ev.quota_spesa_7g_pct[c] if c in ev.quota_spesa_7g_pct else '—' }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+  {% endfor %}
+  {% for f in v.findings %}
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span class="chip {{ 'rosso' if f.priority == 1 else 'giallo' }}">priorità {{ f.priority }}</span>
+      <b>{{ labels.get(f.issue_code, f.issue_code) }}</b><span class="muted">{{ f.object_id }}</span>
+    </div>
+    {% set ev = f.evidence %}
+    <div class="ev">
+      {% if ev.sotto_minimo %}<span>Sotto il minimo: <b>{{ ev.sotto_minimo | join('; ') }}</b></span>{% endif %}
+      {% if ev.calo_ctr_pct is defined %}<span>CTR <b>{{ ev.ctr_ultimi_7g_pct }}%</b> (picco {{ ev.ctr_picco_pct }}%, −{{ ev.calo_ctr_pct }}%)</span>
+        <span>CPM <b>{{ ev.cpm_primi_7g }} → {{ ev.cpm_ultimi_7g }}</b></span>
+        <span>Frequenza <b>{{ ev.frequenza_7g_prima }} → {{ ev.frequenza_ultimi_7g }}</b></span>
+        <span>CPA <b>{{ ev.cpa_ultimi_7g }}</b> (rif. {{ ev.cpa_riferimento }})</span>{% endif %}
+      {% if ev.quota_pct %}<span>Quota spesa <b>{{ ev.quota_pct }}%</b></span>{% endif %}
+    </div>
+    {% if f.proposal %}<p>{{ f.proposal.azione }}{% if f.proposal.buchi %}: {{ f.proposal.buchi | join(', ') }}{% endif %}</p>{% endif %}
+    {% if f.action_key %}<p class="muted">Regola: {{ f.action_key }}</p>{% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

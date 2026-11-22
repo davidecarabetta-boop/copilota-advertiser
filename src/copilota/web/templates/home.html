@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block body %}
+<section class="grid">
+  {% for c in clients %}
+  <a class="card" href="/c/{{ c.slug }}" style="text-decoration:none;color:inherit">
+    <h2>{{ c.slug | upper }}</h2>
+    <p class="muted">Dati fino al {{ c.updated.strftime('%d/%m/%Y') if c.updated else '—' }}</p>
+    {% for x in c.accounts %}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+      <span>{{ x.a.platform | capitalize }} · {{ x.a.name }}</span>
+      <span class="chip {{ x.gate.value }}">Segnali {{ x.gate.value }}</span>
+      {% if not x.quality %}<span class="chip neutral">qualità non misurata</span>{% endif %}
+    </div>
+    {% endfor %}
+  </a>
+  {% endfor %}
+</section>
+{% endblock %}

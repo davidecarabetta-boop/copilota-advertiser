@@ -96,6 +96,43 @@ class CsvSource:
         return self._cache[table]
 
 
+def _to_csv(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, date):
+        return v.isoformat()
+    return str(v)
+
+
+def write_table(directory: Path, table: str, rows: list[Row]) -> None:
+    """Scrive <dir>/<tabella>.csv con le colonne di SCHEMAS (usato dagli input a mano del tool)."""
+    cols = list(SCHEMAS[table])
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    with open(Path(directory) / f"{table}.csv", "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(cols)
+        for r in rows:
+            w.writerow([_to_csv(r.get(c)) for c in cols])
+
+
+def parse_rows(table: str, text: str) -> list[Row]:
+    """Legge un CSV caricato dall'utente e lo valida contro SCHEMAS. Errori in italiano."""
+    schema = SCHEMAS[table]
+    reader = csv.DictReader(text.splitlines())
+    missing = set(schema) - set(reader.fieldnames or [])
+    if missing:
+        raise ValueError(f"Colonne mancanti: {', '.join(sorted(missing))}")
+    rows = []
+    for n, r in enumerate(reader, start=2):
+        try:
+            rows.append({k: cast((r[k] or "").strip()) for k, cast in schema.items()})
+        except ValueError as e:
+            raise ValueError(f"Riga {n}: valore non valido ({e})") from e
+    return rows
+
+
 class BigQuerySource:
     """Da implementare in fase 01, quando le tabelle esistono: stessa interfaccia di CsvSource."""
 

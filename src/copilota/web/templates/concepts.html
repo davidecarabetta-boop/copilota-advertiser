@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Concept creativi · {{ slug | upper }}{% endblock %}
+{% block crumbs %}<a href="/c/{{ slug }}">← {{ slug | upper }}</a>{% endblock %}
+{% block body %}
+<section class="card">
+  <h2>Concept creativi (Meta)</h2>
+  <p class="muted"><b>Concept</b> = cosa si promuove: le versioni datate dello stesso modello o offerta sono lo stesso concept. <b>Angolo</b> = il messaggio (offerta, problema da risolvere, prova sociale, servizio e garanzia…). Concept diversi con lo stesso angolo e formato non sono diversità. Spunta <b>Confermato</b> quando sei d'accordo; una riga con concept vuoto viene tolta.</p>
+  <form method="post">
+    <div class="tablewrap"><table>
+      <thead><tr><th>Annuncio</th><th>Campagna</th><th class="num">Spesa</th><th>Concept</th><th>Angolo</th><th>Formato</th><th>Confermato</th></tr></thead>
+      <tbody>
+      {% for a in ads %}
+      <tr>
+        <td>{{ a.ad_name }}{% if a.proposed %} <span class="chip giallo">proposto dal nome</span>{% endif %}
+          <input type="hidden" name="ad_id" value="{{ a.ad_id }}"></td>
+        <td class="muted">{{ a.campaign }}</td>
+        <td class="num">{{ '%.0f' % a.spend }} €</td>
+        <td><input name="concept" value="{{ a.concept }}" aria-label="Concept di {{ a.ad_name }}"></td>
+        <td><input name="angle" value="{{ a.angle }}" list="angles" aria-label="Angolo di {{ a.ad_name }}"></td>
+        <td><select name="format" aria-label="Formato di {{ a.ad_name }}">
+          <option value="" {% if not a.format %}selected{% endif %}>—</option>
+          {% for f in formats %}<option {% if a.format == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
+        </select></td>
+        <td><input type="checkbox" name="confirmed" value="{{ a.ad_id }}" {% if a.confirmed %}checked{% endif %} aria-label="Confermato {{ a.ad_name }}"></td>
+      </tr>
+      {% else %}<tr><td colspan="7" class="muted">Nessun annuncio con spesa nelle campagne a conversione.</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+    <datalist id="angles"><option>offerta sul modello</option><option>sconto a scadenza</option><option>problema da risolvere</option><option>prova sociale</option><option>servizio e garanzia</option><option>km0 in pronta consegna</option></datalist>
+    <p style="margin-top:12px"><button class="btn primary" type="submit">Salva concept</button></p>
+  </form>
+</section>
+{% endblock %}

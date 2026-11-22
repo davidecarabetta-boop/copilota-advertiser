@@ -11,7 +11,7 @@
 | 04 Misurazione | – | |
 | 04b Test A/B, lift, esperimenti | – | |
 | 05 Briefing | – | |
-| 06 Interfaccia (sola lettura) | – | |
+| 06 Interfaccia (sola lettura) | Prototipo locale | `src/copilota/web/` (FastAPI + Jinja, stile del mockup), avvio con `.claude/launch.json` o `python -m uvicorn copilota.web.app:app --host 127.0.0.1 --port 8000`. Pagine: clienti, cliente (Segnali, ticket, Creatività, "vedi come al"), input a mano: export CRM, concept creativi, stato del tracciamento (scrivono solo in `data/<cliente>/`). Manca: login Workspace, schede Google/Misurazione/Cosa fare oggi, azioni (fatta/scartata, ok del senior, ticket), hosting |
 | 07 Skill su BigQuery e MCP del Copilota | – | |
 | 08 Scrittura via MCP ufficiali + hook di guardrail | – | |
 | 09 Tool creativo | – | In parallelo alla 06, dipende dal formato di input del tool creativo |
