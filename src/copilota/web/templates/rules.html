@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Regole di lavoro · Copilota Advertiser{% endblock %}
+{% block body %}
+<section class="card">
+  <h2>Regole di lavoro</h2>
+  <p>Il Copilota propone un'attività solo se <b>tutte</b> le condizioni sono vere e <b>nessuna</b> esclusione vale. In ogni attività, sotto "Perché te lo propongo", trovi le condizioni controllate.</p>
+  <p class="muted">Fonte: <code>config/regole.yaml</code>. Stato: <b>bozza da validare con il senior</b>. Se una regola va cambiata, si cambia lì e il tool si adegua.</p>
+</section>
+
+<section class="card">
+  <h3>Regole che valgono sempre</h3>
+  <ul class="steps">
+    <li>Se i numeri sono rotti (zero conversioni con spesa, doppio conteggio, consenso assente) l'unica attività è il ticket al team analytics.</li>
+    <li>Gli oggetti in test o in apprendimento non si toccano.</li>
+    <li>L'advertiser conferma o scarta le proposte: non inventa valori.</li>
+    <li>Non si elimina niente: si mette in pausa.</li>
+    <li>Budget: al massimo ±{{ azioni.budget_giornaliero.variazione_max_pct }}% alla volta, poi {{ azioni.budget_giornaliero.raffreddamento_giorni }} giorni di attesa. Target di offerta: al massimo ±{{ azioni.target_offerta.variazione_max_pct }}%, poi {{ azioni.target_offerta.raffreddamento_giorni }} giorni.</li>
+  </ul>
+</section>
+
+{% for key, p in proposte.items() %}
+<section class="card rule" id="{{ key }}">
+  <div class="meta" style="display:flex;gap:6px;flex-wrap:wrap">
+    {% set az = azioni.get(p.azione) if p.azione else None %}
+    {% if az %}<span class="tag level-{{ az.livello }}">{{ {'puoi_farlo':'Puoi farlo','decide_specialist':'Decide lo specialist','serve_senior':'Serve il senior','vietato':'Vietato'}[az.livello] }}</span>{% else %}<span class="tag level-puoi_farlo">Puoi farlo</span>{% endif %}
+    <span class="muted">{{ key }}</span>
+  </div>
+  <h3>{{ p.titolo }}</h3>
+  <p>{{ p.perche }}</p>
+  <div class="parts">
+    <div class="part"><h4>Si propone solo se</h4><ul class="steps">{% for c in p.proponi_se %}<li>{{ c.testo }}</li>{% endfor %}</ul></div>
+    <div class="part dont"><h4>Non si propone se</h4>{% if p.non_proporre_se %}<ul class="steps">{% for c in p.non_proporre_se %}<li>{{ c.testo }}</li>{% endfor %}</ul>{% else %}<p class="muted" style="color:var(--muted)">Nessuna esclusione.</p>{% endif %}</div>
+    <div class="part"><h4>Come si fa</h4><ol>{% for s in p.procedura %}<li>{{ s }}</li>{% endfor %}</ol></div>
+    <div class="part"><h4>Verifica</h4><p>{% if p.verifica %}Dopo {{ p.verifica.dopo_giorni }} giorni: {{ p.verifica.cosa }}{% endif %}</p>
+      {% if p.se_qualita_bassa %}<p class="muted">{{ p.se_qualita_bassa }}</p>{% endif %}</div>
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

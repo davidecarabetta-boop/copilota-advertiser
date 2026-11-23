@@ -1,9 +1,11 @@
 # Fonte unica delle regole di modifica.
 # Letta da interfaccia, MCP e skill. I valori numerici sono una proposta da validare.
-# livelli: puoi_farlo | serve_senior | vietato
+# livelli: puoi_farlo | decide_specialist | serve_senior | vietato
+# ruoli: l'advertiser esegue; lo specialist decide KPI (per piattaforma e linea) e budget;
+#        il senior approva le modifiche delicate (struttura, strategia, esclusioni).
 
 guardrail:
-  blocco_se_segnali_rossi: true          # con Segnali rossi l'unica azione ammessa è aprire un ticket
+  blocco_se_segnali_rossi: true          # con dati rotti (rosso bloccante) l'unica azione ammessa è aprire un ticket; gli altri rossi diventano attività (decisione 2026-11-22)
   blocco_se_in_apprendimento: true       # eccezione: pausa d'emergenza approvata dal senior
   blocco_se_in_test: true                # nessuna modifica agli oggetti coinvolti in un test in corso
   blocco_chiusura_anticipata_test: true
@@ -53,14 +55,14 @@ azioni:
 
   budget_giornaliero:
     piattaforme: [google, meta]
-    livello: puoi_farlo
+    livello: decide_specialist          # l'importo lo decide lo specialist, l'advertiser lo applica
     variazione_max_pct: 20
     raffreddamento_giorni: 7
     oltre_limite: serve_senior
 
-  target_offerta:          # tROAS, tCPA, bid cap, cost cap
+  target_offerta:          # tROAS, tCPA, bid cap, cost cap: discendono dai KPI dello specialist
     piattaforme: [google, meta]
-    livello: serve_senior
+    livello: decide_specialist
     variazione_max_pct: 15
     raffreddamento_giorni: 14
 
@@ -93,6 +95,171 @@ azioni:
   eliminazione:
     livello: vietato
     note: "si mette in pausa, non si elimina"
+
+# ---------------------------------------------------------------------------------------------
+# PROPOSTE: quando il Copilota può suggerire un'azione all'advertiser, quando no, come si fa,
+# come si verifica. Il tool propone un'attività SOLO se tutte le condizioni `proponi_se` sono
+# vere e nessuna `non_proporre_se` lo è; nella scheda mostra le condizioni controllate.
+# Gli `id` delle condizioni sono letti dal codice (src/copilota/tasks.py): non rinominarli.
+# Ogni proposta ha uno `stato`: bozza (da validare) o confermata (con data).
+# ---------------------------------------------------------------------------------------------
+proposte:
+
+  accorpa_campagne:
+    stato: confermata 2026-11-22
+    azione: struttura_campagne
+    titolo: Accorpare campagne con pochi dati
+    perche: >-
+      Sotto le soglie di volume lo Smart Bidding ha pochi esempi e le offerte oscillano.
+      Si accorpano solo campagne che fanno la stessa cosa: stesso prodotto, stesso tipo,
+      stessa zona, stessa conversione. Altrimenti si mischiano budget e pubblici diversi.
+    proponi_se:
+      - {id: sotto_soglia, testo: "Ogni campagna del gruppo fa meno delle conversioni minime al mese (soglie.yaml)"}
+      - {id: stessa_linea, testo: "Stessa linea di business (es. AUTO_B2C con AUTO_B2C)"}
+      - {id: stesso_tipo, testo: "Stesso tipo di campagna (Search con Search, PMax con PMax)"}
+      - {id: stessa_strategia, testo: "Stessa strategia di offerta"}
+      - {id: stessa_zona, testo: "Stessa zona geografica (es. Lombardia con Lombardia)"}
+      - {id: almeno_due, testo: "Almeno due campagne nel gruppo: una sola non si accorpa"}
+    non_proporre_se:
+      - {id: brand, testo: "È una campagna Brand: resta separata"}
+      - {id: in_test, testo: "Una campagna è in un test o in apprendimento"}
+      - {id: budget_cliente, testo: "Il budget è deciso per zona o punto vendita dal cliente (config del cliente)"}
+    procedura:
+      - "Tieni la campagna con più conversioni: è quella che resta"
+      - "Search: sposta gruppi di annunci e keyword dell'altra nella campagna che resta; PMax: sposta gli asset group"
+      - "Budget della campagna che resta = somma dei due budget"
+      - "Non cambiare strategia né target nella stessa settimana"
+      - "Metti in pausa l'altra campagna (non eliminarla)"
+    verifica: {dopo_giorni: 14, cosa: "Conversioni a settimana almeno pari alla somma di prima e costo per conversione entro +20%"}
+
+  campagna_fuori_kpi:
+    stato: confermata 2026-11-22
+    azione: budget_giornaliero
+    titolo: Segnalare allo specialist una campagna fuori KPI
+    perche: >-
+      I KPI li decide lo specialist per piattaforma e linea. Se una campagna costa più del KPI
+      per lead, per lead qualificato o per contratto, lo specialist deve saperlo con i numeri:
+      decide lui se cambiare budget, target o campagna. Il Copilota non sposta budget da solo.
+    proponi_se:
+      - {id: kpi_presenti, testo: "Lo specialist ha inserito i KPI per questa piattaforma e linea"}
+      - {id: crm_maturo, testo: "Per i KPI di qualità: dati CRM su lead di almeno 30 giorni, nello stesso periodo della spesa"}
+      - {id: fuori_kpi, testo: "La campagna supera almeno un KPI di costo (oltre la tolleranza in soglie.yaml)"}
+      - {id: abbastanza_lead, testo: "La campagna ha abbastanza lead per giudicarla (soglie.yaml)"}
+      - {id: pesa, testo: "La campagna pesa almeno il 10% della spesa della piattaforma"}
+    non_proporre_se:
+      - {id: in_test, testo: "La campagna è in un test o in apprendimento"}
+    procedura:
+      - "Mostra la scheda allo specialist: ha già i numeri e il confronto con i KPI"
+      - "Lo specialist decide: budget, target, pubblico o creatività"
+      - "Se cambia il budget: al massimo il 20% alla volta, poi 7 giorni di attesa"
+      - "Se la campagna è prospecting, il budget non va spostato sul retargeting: vive del traffico che il prospecting porta"
+    verifica: {dopo_giorni: 14, cosa: "La campagna rientra nei KPI dello specialist"}
+
+  volume_sotto_kpi:
+    stato: confermata 2026-11-22
+    azione: budget_giornaliero
+    titolo: Segnalare allo specialist che i lead sono sotto il volume richiesto
+    perche: >-
+      Lo specialist fissa quanti lead servono al cliente ogni mese. Se una piattaforma e
+      linea ne porta meno, va deciso se aumentare budget, allargare il pubblico o cambiare
+      campagne.
+    proponi_se:
+      - {id: kpi_presenti, testo: "Lo specialist ha inserito il volume di lead al mese per questa piattaforma e linea"}
+      - {id: sotto_volume, testo: "Negli ultimi 30 giorni i lead sono sotto il volume richiesto (oltre la tolleranza)"}
+    non_proporre_se: []
+    procedura:
+      - "Mostra la scheda allo specialist"
+      - "Prima di aumentare il budget controlla che le campagne siano dentro i KPI di costo"
+    verifica: {dopo_giorni: 30, cosa: "Lead del mese vicini al volume richiesto"}
+
+  riattiva_oggetto:
+    stato: confermata 2026-11-22
+    azione: pausa_riattivazione
+    titolo: Riattivare un ad set o una campagna in pausa da cui dipendevano i lead
+    perche: >-
+      Se un oggetto che portava la maggior parte dei lead viene messo in pausa e non c'è un
+      sostituto che consegna, la campagna si ferma.
+    proponi_se:
+      - {id: portava_meta, testo: "Portava almeno metà delle conversioni nei 14 giorni prima della pausa"}
+      - {id: ancora_in_pausa, testo: "È ancora in pausa"}
+      - {id: crollo, testo: "Dopo la pausa le conversioni sono crollate (soglie.yaml)"}
+      - {id: qualita_ok, testo: "Secondo il CRM la sua campagna rispetta il KPI dello specialist di costo per lead qualificato (se manca il CRM o il KPI, decide il senior)"}
+    non_proporre_se:
+      - {id: pausa_vecchia, testo: "La pausa è di più di 30 giorni fa: la situazione è cambiata"}
+    procedura:
+      - "Riattivalo così com'era: stesso budget, pubblico e annunci"
+      - "Chiedi a chi l'ha messo in pausa se era una scelta (test, stagionalità)"
+    verifica: {dopo_giorni: 3, cosa: "Le conversioni tornano vicino al livello di prima della pausa"}
+    se_qualita_bassa: "Non si propone la riattivazione: diventa una decisione del senior (riattivare per volume o lavorare sulla qualità)"
+    livello: serve_senior              # confermato 2026-11-22: la riattivazione la decide sempre il senior
+    se_qualita_non_verificabile: "Si propone, ma decide il senior: senza CRM o KPI non si sa se i lead di quell'oggetto erano buoni"
+
+  conversioni_secondarie:
+    stato: confermata 2026-11-22
+    azione: strategia_obiettivo_valore
+    titolo: Rendere secondarie le conversioni che non sono lead
+    perche: >-
+      La piattaforma cerca persone simili a quelle che convertono: se conta iscrizioni a
+      YouTube o visite come conversioni, porta iscritti e visitatori, non clienti.
+    proponi_se:
+      - {id: quota_non_lead, testo: "Almeno il 5% delle conversioni contate non sono lead o vendite (soglie.yaml)"}
+      - {id: segnali_verdi, testo: "Nessun problema aperto su tracciamento e qualità dal CRM (regola strategia_obiettivo_valore)"}
+    non_proporre_se:
+      - {id: in_test, testo: "L'account ha un test in corso sulle conversioni"}
+    procedura:
+      - "Google Ads › Obiettivi › Conversioni: imposta come secondarie le azioni indicate"
+      - "Non eliminarle: restano visibili nei report"
+      - "Nella stessa settimana non cambiare target o budget: il calo di 'conversioni' è voluto"
+    verifica: {dopo_giorni: 14, cosa: "Costo per lead del CRM stabile o in calo"}
+
+  nuove_creativita:
+    stato: confermata 2026-11-22
+    azione: aggiunta_creativita_asset
+    titolo: Aggiungere creatività con messaggi e formati diversi
+    perche: >-
+      Meta trova persone diverse solo con creatività davvero diverse: stesso messaggio e
+      stesso formato con un prodotto diverso raggiungono lo stesso tipo di persone.
+    proponi_se:
+      - {id: diversita_bassa, testo: "Concept, messaggi o formati attivi sotto i minimi (soglie.yaml)"}
+      - {id: campagna_lead, testo: "La campagna ottimizza per lead o vendite"}
+    non_proporre_se:
+      - {id: campagna_spenta, testo: "La campagna non spende"}
+      - {id: in_apprendimento, testo: "La campagna ha ad set in apprendimento o in test: aggiungere annunci li fa ripartire"}
+    procedura:
+      - "Prepara i concept che mancano nella mappa della diversità"
+      - "Caricali nella stessa campagna, senza creare nuovi ad set"
+    verifica: {dopo_giorni: 14, cosa: "Copertura e costo per lead del CRM"}
+
+  rinnova_creativita:
+    stato: confermata 2026-11-22
+    azione: aggiunta_creativita_asset
+    titolo: Rinnovare una creatività che si sta stancando
+    perche: >-
+      Quando le stesse persone vedono troppe volte lo stesso annuncio, il tasso di clic scende
+      e i costi salgono: Meta restringe il pubblico. Va preparata una nuova versione prima
+      che i risultati crollino.
+    proponi_se:
+      - {id: stanca, testo: "Segnali di stanchezza (soglie.yaml): CTR sceso di almeno il 20% dal suo picco con frequenza o copertura nuova in peggioramento, oppure frequenza a 7 giorni oltre 3"}
+      - {id: oltre_7_giorni, testo: "Il concept è attivo da più di 7 giorni"}
+    non_proporre_se:
+      - {id: in_apprendimento, testo: "La campagna ha ad set in apprendimento o in test"}
+    procedura:
+      - "Prepara una nuova versione dello stesso concept: stesso messaggio, immagine e frase d'attacco nuove"
+      - "Caricala nello stesso ad set, accanto alla vecchia"
+      - "Quando la nuova ha almeno 7 giorni di spesa, metti in pausa la vecchia"
+    verifica: {dopo_giorni: 14, cosa: "CTR della nuova versione vicino al picco della vecchia e frequenza sotto 3"}
+
+  ticket_analytics:
+    stato: confermata 2026-11-22
+    azione: null
+    titolo: Aprire un ticket al team analytics
+    perche: "Problemi di dati (tracciamento, CRM, UTM) che l'advertiser non deve risolvere da solo."
+    proponi_se:
+      - {id: problema_dati, testo: "Un controllo sui dati è rosso o giallo con una causa chiara"}
+    non_proporre_se: []
+    procedura:
+      - "Copia il testo pronto e mandalo al team analytics"
+    verifica: {dopo_giorni: 7, cosa: "Il controllo torna verde"}
 
 # Mappa degli strumenti di scrittura degli MCP ufficiali → azione.
 # Letta dagli hook PreToolUse (fase 08). Uno strumento di scrittura NON elencato qui è bloccato.

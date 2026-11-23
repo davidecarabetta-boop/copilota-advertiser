@@ -53,20 +53,46 @@ def source():
         ])
 
 
-def test_quality_matches_and_judges():
+KPIS = {("meta", "AUTO_B2C"): {"platform": "meta", "line": "AUTO_B2C", "cost_per_lead": None,
+                                "cost_per_qualified": 1000.0, "cost_per_contract": None,
+                                "leads_per_month": None, "monthly_budget": None}}
+
+
+def test_quality_matches_and_judges_against_specialist_kpis():
     q = campaign_quality(source(), ACC)
     rows = {r["campaign_id"]: r for r in q["rows"]}
     assert rows["1"]["leads"] == 258  # 248 + suffisso; fuori periodo escluso
     assert round(rows["2"]["cost_per_qualified"]) == 310
-    j = judge(q, TH)
-    assert [p["campaign_id"] for p in j["poor"]] == ["1"]
-    assert j["best"]["campaign_id"] == "2"
+    j = judge(q, TH, KPIS, "meta")
+    assert [o["campaign_id"] for o in j["out"]] == ["1"]  # 36000/12 = 3000 > KPI 1000
+    assert j["out"][0]["over"][0]["metric"] == "costo per lead qualificato"
+    assert [w["campaign_id"] for w in j["within"]] == ["2"]
     assert j["utm_lost"] == [("vecchia-campagna", 80)]
 
 
-def test_poor_campaign_turns_reactivation_into_senior_decision():
+def test_without_kpis_nothing_is_judged():
+    j = judge(campaign_quality(source(), ACC), TH, {}, "meta")
+    assert not j["out"] and j["missing_kpi"] == ["AUTO_B2C"]
+    plan = build_plan(ACC, [], [], {**j, "from": D0, "to": D1})
+    assert plan.missing[0].page == "kpi"
+    assert not plan.tasks or all(t.rule == "ticket_analytics" for t in plan.tasks)
+
+
+def test_out_of_kpi_goes_to_specialist_unless_in_learning():
     q = campaign_quality(source(), ACC)
-    camp = {**judge(q, TH), "from": D0, "to": D1}
+    camp = {**judge(q, TH, KPIS, "meta"), "from": D0, "to": D1, "status_known": True}
+    task = next(t for t in build_plan(ACC, [], [], camp).tasks
+                if t.rule == "campagna_fuori_kpi")
+    assert task.level == "decide_specialist" and "segnalalo allo specialist" in task.title
+    blocked = {**judge(q, TH, KPIS, "meta", {"1"}), "from": D0, "to": D1, "status_known": True}
+    plan = build_plan(ACC, [], [], blocked)
+    assert not any(t.rule == "campagna_fuori_kpi" for t in plan.tasks)
+    assert any("fuori KPI" in w.title for w in plan.waiting)
+
+
+def test_reactivation_of_out_of_kpi_campaign_is_a_senior_decision():
+    q = campaign_quality(source(), ACC)
+    camp = {**judge(q, TH, KPIS, "meta"), "from": D0, "to": D1}
     cause = {"kind": "pausa", "date": date(2026, 11, 9), "object_type": "adset",
              "object_id": "9", "object_name": "BROAD", "share_pct": 98, "per_day": 24,
              "still_off": True, "old_value": "Active", "new_value": "Inactive",
@@ -75,9 +101,6 @@ def test_poor_campaign_turns_reactivation_into_senior_decision():
                   {"cause": cause, "before": 18, "recent": 0.1, "cost_before": 300,
                    "cost_recent": 12})
     plan = build_plan(ACC, [crash], [], camp)
-    titles = [t.title for t in plan.tasks]
-    assert titles[0].startswith("Prima di riattivare «BROAD» decidi col senior")
+    assert plan.tasks[0].title.startswith("Prima di riattivare «BROAD» decidi col senior")
     assert plan.tasks[0].level == "serve_senior"
-    shift = "Sposta budget da «IT | MF | AUTO I B2C | META | LEAD»"
-    assert any(t.startswith(shift) for t in titles)
-    assert any("vecchia-campagna" in t for t in titles)
+    assert not any(t.title.startswith("Sposta budget") for t in plan.tasks)

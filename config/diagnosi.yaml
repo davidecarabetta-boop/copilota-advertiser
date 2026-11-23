@@ -1,0 +1,48 @@
+# Diagnosi per tipo di campagna (passo 3 della pipeline, docs/pipeline.md).
+# Si applica solo alle campagne selezionate (sotto target o da scalare).
+# - base: true  -> si fa sempre; base: false -> la chiede lo specialist se serve
+# - fonte: auto -> la calcola il Copilota dai dati che ha
+#          chat -> si fa con Claude e gli MCP (la richiesta da fare è in `chiedi`)
+# Gli `id` delle verifiche automatiche sono letti dal codice (src/copilota/diagnosis.py).
+# Stato: BOZZA da validare con lo specialist (2026-11-23).
+
+comuni:   # valgono per tutti i tipi
+  - {id: target_vs_cpa, base: true, fonte: auto, testo: "CPA della finestra assestata contro il target"}
+  - {id: stato_strategia, base: true, fonte: auto, testo: "Stato della strategia di offerta (apprendimento, limitata dal budget…)"}
+  - {id: modifiche_recenti, base: true, fonte: auto, testo: "Modifiche nelle ultime 2 settimane che spiegano l'andamento"}
+  - {id: qualita_crm, base: true, fonte: auto, testo: "Qualità dei lead dal CRM: costo per lead qualificato e per contratto"}
+
+tipi:
+  SEARCH:
+    nome: Search
+    verifiche:
+      - {id: persa_budget, base: true, fonte: auto, testo: "Quota di impressioni persa per budget"}
+      - {id: persa_ranking, base: true, fonte: auto, testo: "Quota di impressioni persa per ranking (offerta o qualità degli annunci)"}
+      - {id: termini_ricerca, base: true, fonte: chat, testo: "Termini di ricerca con spesa e senza conversioni, o fuori tema",
+         chiedi: "Scarica i termini di ricerca degli ultimi 30 giorni di questa campagna (search_term_view) e dimmi quali spendono senza convertire o sono fuori tema"}
+      - {id: annunci, base: false, fonte: chat, testo: "Annunci RSA: efficacia e asset con resa bassa",
+         chiedi: "Controlla gli annunci RSA della campagna (ad_group_ad, ad_strength e asset) e segnala quelli deboli"}
+  PERFORMANCE_MAX:
+    nome: Performance Max
+    verifiche:
+      - {id: persa_budget, base: true, fonte: auto, testo: "Quota di impressioni persa per budget (parte Search)"}
+      - {id: persa_ranking, base: true, fonte: auto, testo: "Quota di impressioni persa per ranking (parte Search)"}
+      - {id: canali, base: true, fonte: chat, testo: "Dove va la spesa: Search, Shopping, YouTube, Display, Discover",
+         chiedi: "Dimmi come si divide spesa e conversioni per canale di questa Performance Max negli ultimi 30 giorni"}
+      - {id: brand, base: true, fonte: chat, testo: "Quanto delle conversioni viene da ricerche del brand",
+         chiedi: "Dai search term insights di questa Performance Max, che quota di conversioni viene da ricerche del brand del cliente?"}
+      - {id: asset, base: false, fonte: chat, testo: "Copertura degli asset group (video verticali, titoli, immagini)",
+         chiedi: "Controlla gli asset group di questa Performance Max: mancano video verticali o asset? Quali hanno resa bassa?"}
+  DEMAND_GEN:
+    nome: Demand Gen
+    verifiche:
+      - {id: creativita, base: true, fonte: chat, testo: "Creatività: varietà e stanchezza",
+         chiedi: "Elenca gli annunci di questa Demand Gen con spesa, CTR e conversioni degli ultimi 30 giorni e dimmi quali sono stanchi"}
+  OUTCOME_LEADS:
+    nome: Meta lead
+    verifiche:
+      - {id: frequenza, base: true, fonte: auto, testo: "Frequenza nella finestra (oltre 3 le stesse persone vedono troppo gli annunci)"}
+      - {id: apprendimento, base: true, fonte: auto, testo: "Ad set in apprendimento o in test"}
+      - {id: stanchezza, base: true, fonte: auto, testo: "Creatività stanche (semaforo)"}
+      - {id: pubblico, base: false, fonte: chat, testo: "Pubblico e Advantage+: sovrapposizioni, esclusioni dei clienti",
+         chiedi: "Per gli ad set attivi di questa campagna, dimmi pubblico, Advantage+ audience, esclusioni e se si sovrappongono"}

@@ -12,10 +12,11 @@ import yaml
 from copilota.causes import ads_manager_link
 from copilota.config import CONFIG_DIR
 from copilota.creative import Finding
+from copilota.rules import Condition, evaluate, is_brand, line_of, proposals, zone_of
 from copilota.signals import UNKNOWN, Check, Status
 
-LEVEL_LABEL = {"puoi_farlo": "Puoi farlo", "serve_senior": "Serve il senior",
-               "vietato": "Vietato"}
+LEVEL_LABEL = {"puoi_farlo": "Puoi farlo", "decide_specialist": "Decide lo specialist",
+               "serve_senior": "Serve il senior", "vietato": "Vietato"}
 
 
 @dataclass
@@ -31,10 +32,21 @@ class Task:
     button: str
     ticket: str | None = None  # testo da copiare, se l'azione è aprire un ticket
     link: tuple[str, str] | None = None  # (etichetta, url) per aprire l'oggetto in piattaforma
+    rule: str | None = None  # chiave della proposta in regole.yaml
+    conditions: list[Condition] = field(default_factory=list)  # perché viene proposta
+    verifica: str | None = None  # cosa controllare dopo, e quando
 
     @property
     def level_label(self) -> str:
         return LEVEL_LABEL.get(self.level, self.level)
+
+
+@dataclass
+class Waiting:
+    """Una proposta che oggi non si può fare: quale e perché (condizioni non soddisfatte)."""
+
+    title: str
+    reasons: list[str]
 
 
 @dataclass
@@ -54,6 +66,25 @@ class Plan:
     tasks: list[Task]
     missing: list[Missing]
     dont_touch: list[str]
+    waiting: list[Waiting] = field(default_factory=list)
+
+
+def _rule(key: str, values: dict, task: Task, waiting: list[Waiting]) -> list[Task]:
+    """Propone `task` solo se la proposta `key` di regole.yaml è soddisfatta; altrimenti la
+    mette in attesa con le condizioni che mancano."""
+    ok, conds = evaluate(key, values)
+    p = proposals()[key]
+    if ok:
+        task.rule, task.conditions = key, conds
+        v = p.get("verifica")
+        task.verifica = f"Dopo {v['dopo_giorni']} giorni: {v['cosa']}" if v else None
+        return [task]
+    reasons = [("non vale: " if not c.exclusion else "vale: ") + c.text for c in conds
+               if (c.state is False and not c.exclusion) or (c.state is True and c.exclusion)]
+    reasons += ["non verificabile con i dati: " + c.text for c in conds
+                if c.state is None and not c.exclusion]
+    waiting.append(Waiting(task.title, reasons))
+    return []
 
 
 def _level(action_key: str) -> str:
@@ -93,116 +124,137 @@ def _ticket(account: dict, items: list[Check], also: list[Check], blocking: bool
 
 def _analytics_task(c: Check, title: str, perche: str, account: dict,
                     priority: int = 2) -> Task:
+    ok, conds = evaluate("ticket_analytics", {"problema_dati": True})
     return Task(
         title=title, module="Segnali", level="puoi_farlo", priority=priority,
         cosa=c.detail, perche=perche,
         come=["Copia il testo qui sotto e mandalo al team analytics",
               "Intanto continua con le altre attività: questo non blocca l'account"],
         non_fare="Non provare a compensare cambiando budget o offerte: il problema è nei dati.",
-        button="Copia il testo del ticket", ticket=_ticket(account, [c], [], blocking=False))
+        button="Copia il testo del ticket", ticket=_ticket(account, [c], [], blocking=False),
+        rule="ticket_analytics", conditions=conds,
+        verifica="Dopo 7 giorni: il controllo torna verde")
 
 
-def _cause_task(c: Check, account: dict, camp: dict | None = None) -> Task:
+def _quality_of(camp: dict | None, campaign_id: str) -> tuple[bool | None, dict | None]:
+    """La campagna rispetta il KPI di costo per lead qualificato? (True / False / None se non
+    c'è CRM o KPI) e la riga della campagna fuori KPI, se lo è."""
+    if not camp:
+        return None, None
+    bad = next((o for o in camp.get("out", []) if o["campaign_id"] == campaign_id
+                and any(x["metric"] == "costo per lead qualificato" for x in o["over"])), None)
+    if bad:
+        return False, bad
+    ok = next((w for w in camp.get("within", []) if w["campaign_id"] == campaign_id
+               and (w.get("kpi") or {}).get("cost_per_qualified")), None)
+    return (True, None) if ok else (None, None)
+
+
+def _cause_task(c: Check, account: dict, camp: dict | None, waiting: list[Waiting]
+                ) -> list[Task]:
     cause, d = c.data["cause"], c.data
     kind = "ad set" if cause["object_type"] == "adset" else "campagna"
     link = None
     if account["platform"] == "meta":
         link = (f"Apri «{cause['object_name']}» in Gestione inserzioni",
                 ads_manager_link(account["account_id"], cause["object_type"], cause["object_id"]))
-    poor = next((p for p in (camp or {}).get("poor", [])
-                 if p["campaign_id"] == cause.get("campaign_id")), None)
-    if cause["kind"] == "pausa" and cause["still_off"] and poor:
-        # la pausa ha fatto crollare i lead, ma quei lead rendevano poco: si decide col senior
-        best, avg = camp.get("best"), camp.get("avg")
-        alt = (f" Il retargeting «{best['name']}» costava {best['cost_per_qualified']:.0f} € per "
-               "lead in trattativa." if best and best["campaign_id"] != poor["campaign_id"]
-               else "")
-        return Task(
+    quality, bad = _quality_of(camp, cause.get("campaign_id", ""))
+    days_ago = (cause.get("today") or cause["date"]) - cause["date"]
+    values = {"portava_meta": cause["share_pct"] >= 50, "ancora_in_pausa": cause["still_off"],
+              "crollo": True, "qualita_ok": quality, "pausa_vecchia": days_ago.days > 30}
+    rule = proposals()["riattiva_oggetto"]
+    what = (f"Il {cause['date']:%d/%m} l'{kind} «{cause['object_name']}» è stato messo in "
+            f"pausa. Portava il {cause['share_pct']}% dei lead (circa {cause['per_day']:.0f} al "
+            f"giorno). Da allora i lead sono passati da {d['before']:.0f} a {d['recent']:.1f} "
+            f"al giorno e la spesa da {d['cost_before']} € a {d['cost_recent']} € al giorno.")
+    if cause["kind"] == "pausa" and cause["still_off"] and quality is False:
+        _, conds = evaluate("riattiva_oggetto", values)
+        over = next(x for x in bad["over"] if x["metric"] == "costo per lead qualificato")
+        return [Task(
             title=(f"Prima di riattivare «{cause['object_name']}» decidi col senior: i suoi lead "
-                   "rendevano poco"),
+                   "erano fuori KPI"),
             module="Valore", level="serve_senior", priority=1,
-            cosa=(f"Il {cause['date']:%d/%m} l'{kind} «{cause['object_name']}» è stato messo in "
-                  f"pausa e i lead sono passati da {d['before']:.0f} a {d['recent']:.1f} al "
-                  "giorno. "
-                  f"Ma secondo il CRM la sua campagna costava {_eur(poor['cost_per_qualified'])} "
-                  f"per lead arrivato in trattativa, contro {_eur(avg)} della media dell'account, "
-                  f"con {poor['contracts']} contratti su {poor['leads']} lead."
-                  + alt),
-            perche=("Riattivarlo riporta tanti lead, ma pochi diventano clienti. Lasciarlo "
-                    "spento senza alternative però ferma la campagna. Serve una scelta."),
-            come=["Mostra questa scheda al senior",
-                  "Opzione A: riattivarlo com'era per non restare senza lead, mentre si prepara "
-                  "un'alternativa",
-                  "Opzione B: spostare quel budget su ciò che porta lead buoni (vedi l'attività "
-                  "sul budget)"],
-            non_fare="Non riattivarlo da solo senza aver deciso col senior.",
-            button="Chiedi l'ok al senior", link=link)
-    if cause["kind"] == "pausa" and cause["still_off"]:
-        return Task(
+            cosa=(what + f" Ma secondo il CRM la sua campagna costava {_eur(over['value'])} per "
+                  f"lead qualificato, contro un KPI dello specialist di {_eur(over['target'])}."),
+            perche=rule["se_qualita_bassa"] + ".",
+            come=["Mostra questa scheda al senior e allo specialist",
+                  "Opzione A: riattivarlo com'era per non restare senza lead, e intanto "
+                  "lavorare sulla qualità (lead qualificati dal CRM alla piattaforma, creatività)",
+                  "Opzione B: lasciarlo spento; lo specialist decide dove va il budget"],
+            non_fare="Non riattivarlo da solo senza la decisione del senior.",
+            button="Chiedi l'ok al senior", link=link, rule="riattiva_oggetto",
+            conditions=conds)]
+    if cause["kind"] == "pausa":
+        task = Task(
             title=f"Riattiva l'{kind} «{cause['object_name']}»",
-            module="Vincoli", level=_level("pausa_riattivazione"), priority=1,
-            cosa=(f"Il {cause['date']:%d/%m} l'{kind} «{cause['object_name']}» è stato messo in "
-                  f"pausa. Portava il {cause['share_pct']}% dei lead (circa {cause['per_day']:.0f} "
-                  f"al giorno). Da allora i lead sono passati da {d['before']:.0f} a "
-                  f"{d['recent']:.1f} al giorno e la spesa da {d['cost_before']} € a "
-                  f"{d['cost_recent']} € al giorno."),
-            perche=("Senza quell'ad set alla campagna è rimasto solo quello che non funziona: "
-                    "Meta non trova a chi mostrarlo e smette di spendere. Il tracciamento è a "
-                    "posto, il problema è la pausa."),
-            come=["Apri l'ad set con il link qui sotto",
-                  "Riattivalo così com'era: stesso budget, pubblico e annunci",
-                  f"Tra 3 giorni controlla che i lead tornino verso i {cause['per_day']:.0f} al "
-                  "giorno"],
+            module="Vincoli", level=rule.get("livello") or _level("pausa_riattivazione"),
+            priority=1, cosa=what,
+            perche=rule["perche"],
+            come=["Apri l'oggetto con il link qui sotto", *rule["procedura"]],
             non_fare=("Non modificarlo mentre lo riattivi: ogni modifica fa ripartire "
-                      "l'apprendimento. Se la pausa faceva parte di un test voluto, parlane "
-                      "prima con il senior."),
+                      "l'apprendimento."),
             button="Fatto", link=link)
-    return Task(
+        if quality is None and values["portava_meta"] and cause["still_off"]:
+            # qualità non verificabile (manca CRM o KPI): si propone, ma decide il senior
+            values = {**values, "qualita_ok": True}
+            task.level = "serve_senior"
+            task.button = "Chiedi l'ok al senior"
+            task.perche += " " + rule["se_qualita_non_verificabile"] + "."
+            tasks = _rule("riattiva_oggetto", values, task, waiting)
+            for t in tasks:
+                for cond in t.conditions:
+                    if cond.text == rule["proponi_se"][3]["testo"]:
+                        cond.state = None
+            return tasks
+        return _rule("riattiva_oggetto", values, task, waiting)
+    return [Task(
         title=f"Controlla la modifica a «{cause['object_name']}»: i lead sono crollati",
         module="Vincoli", level="serve_senior", priority=1,
         cosa=c.detail,
         perche="La modifica coincide con il crollo dei lead.",
         come=["Mostra questa scheda al senior", "Decidete se tornare alla situazione di prima"],
         non_fare="Non fare altre modifiche alla campagna finché non avete deciso.",
-        button="Fatto", link=link)
+        button="Fatto", link=link)]
 
 
 def _eur(v: float | None) -> str:
     return "—" if v is None else f"{v:,.0f} €".replace(",", ".")
 
 
-def _campaign_tasks(camp: dict, account: dict) -> list[Task]:
-    """Attività dalla qualità per campagna (export CRM per UTM campaign)."""
-    tasks = []
-    best, avg = camp.get("best"), camp.get("avg")
-    for p in camp.get("poor", []):
-        cpq = p["cost_per_qualified"]
-        cosa = (f"Dal {camp['from']:%d/%m} al {camp['to']:%d/%m} «{p['name']}» ha speso "
-                f"{_eur(p['spend'])} ({p['share_pct']}% della spesa) per {p['leads']} lead nel "
-                f"CRM: {p['qualified']} arrivati in trattativa e {p['contracts']} contratti. "
-                f"Ogni lead in trattativa è costato {_eur(cpq)}, contro {_eur(avg)} di media.")
-        if best and best["campaign_id"] != p["campaign_id"]:
-            cosa += (f" «{best['name']}» nello stesso periodo: {_eur(best['cost_per_qualified'])} "
-                     "per lead in trattativa.")
-            title = f"Sposta budget da «{p['name']}» a «{best['name']}»"
-            come = [f"Abbassa il budget di «{p['name']}» del 20%",
-                    f"Aggiungi lo stesso importo a «{best['name']}»",
-                    "Dopo 2 settimane controlla nel CRM che i lead in trattativa salgano"]
-            if "rmk" in best["name"].lower() or "retarget" in best["name"].lower():
-                come.append("È un retargeting: parla a chi conosce già il cliente e non cresce "
-                            "all'infinito. Se il suo costo per lead sale molto, fermati lì")
-        else:
-            title = f"«{p['name']}» spende molto per pochi lead buoni"
-            come = ["Mostra questa scheda al senior",
-                    "Decidete se ridurre il budget o cambiare pubblico e creatività"]
-        tasks.append(Task(
-            title=title, module="Valore", level="serve_senior", priority=2, cosa=cosa,
-            perche=("La piattaforma la giudica bene perché porta tanti lead, ma il CRM dice che "
-                    "pochi diventano trattative: quel budget rende di più altrove."),
-            come=come,
-            non_fare=("Non spegnerla di colpo e non spostare più del 20% alla volta: le "
-                      "campagne devono riadattarsi."),
-            button="Chiedi l'ok al senior"))
+def _campaign_tasks(camp: dict, account: dict, waiting: list[Waiting]) -> list[Task]:
+    """Attività dal confronto delle campagne con i KPI dello specialist."""
+    tasks: list[Task] = []
+    rule = proposals()["campagna_fuori_kpi"]
+    for o in camp.get("out", []):
+        over = "; ".join(f"{x['metric']} {_eur(x['value'])} contro un KPI di {_eur(x['target'])}"
+                         for x in o["over"])
+        task = Task(
+            title=f"«{o['name']}» è fuori KPI: segnalalo allo specialist",
+            module="Valore", level=_level("budget_giornaliero"), priority=2,
+            cosa=(f"Dal {camp['from']:%d/%m} al {camp['to']:%d/%m} ha speso {_eur(o['spend'])} "
+                  f"({o['share_pct']}% della spesa) per {o['leads']} lead nel CRM, "
+                  f"{o['qualified']} qualificati e {o['contracts']} contratti. {over[0].upper()}"
+                  f"{over[1:]}."),
+            perche=rule["perche"], come=rule["procedura"],
+            non_fare="Non cambiare budget, target o campagna senza la decisione dello specialist.",
+            button="Segnala allo specialist")
+        tasks += _rule("campagna_fuori_kpi", {
+            "kpi_presenti": True, "crm_maturo": True, "fuori_kpi": True,
+            "abbastanza_lead": True, "pesa": True,
+            "in_test": True if o.get("in_test") else (False if camp.get("status_known")
+                                                     else None)}, task, waiting)
+    vrule = proposals()["volume_sotto_kpi"]
+    for v in camp.get("volume", []):
+        task = Task(
+            title=f"Lead {v['line']} sotto il volume richiesto: segnalalo allo specialist",
+            module="Valore", level=_level("budget_giornaliero"), priority=2,
+            cosa=(f"Negli ultimi 30 giorni la linea {v['line']} ha portato {v['leads']} lead "
+                  f"(come li conta la piattaforma), contro {v['target']:.0f} richiesti dallo "
+                  "specialist."),
+            perche=vrule["perche"], come=vrule["procedura"],
+            non_fare="Non alzare il budget da solo.", button="Segnala allo specialist")
+        tasks += _rule("volume_sotto_kpi", {"kpi_presenti": True, "sotto_volume": True},
+                       task, waiting)
     for utm, n in camp.get("utm_lost", []):
         check = Check(account["account_id"], "Tracking", "UTM non abbinati", Status.YELLOW,
                       f"Nel CRM ci sono {n} lead con utm_campaign «{utm}», che non corrisponde "
@@ -214,6 +266,14 @@ def _campaign_tasks(camp: dict, account: dict) -> list[Task]:
     return tasks
 
 
+def _data_problems(checks: list[Check]) -> list[Check]:
+    """Problemi aperti su tracciamento, obiettivo e qualità: finché ci sono, le regole che
+    richiedono Segnali verdi (strategia_obiettivo_valore) aspettano."""
+    return [c for c in checks if c.status is Status.RED and c.group in
+            ("Tracking", "Obiettivo", "Valore") and c.name != "Andamento conversioni"
+            and not c.data.get("attribution")]
+
+
 def build_plan(account: dict, checks: list[Check], findings: list[Finding],
                camp: dict | None = None) -> Plan:
     missing_checks = [c for c in checks if c.status is not Status.GREEN and _is_missing(c)]
@@ -223,6 +283,13 @@ def build_plan(account: dict, checks: list[Check], findings: list[Finding],
                  and not c.blocking]
     yellows = [c for c in checks if c.status is Status.YELLOW and not _is_missing(c)]
     missing = _missing(missing_checks, findings)
+    if camp is not None and (camp.get("missing_kpi") or not camp.get("kpis")):
+        lines = ", ".join(camp.get("missing_kpi") or []) or "tutte le linee"
+        missing.insert(0, Missing(
+            "Inserisci i KPI dello specialist",
+            f"Senza KPI il Copilota non giudica il rendimento delle campagne ({lines}): "
+            "costo per lead, per lead qualificato, per contratto, lead al mese e budget.",
+            "kpi"))
 
     if reds:
         data_yellows = [c for c in yellows + open_reds
@@ -244,34 +311,30 @@ def build_plan(account: dict, checks: list[Check], findings: list[Finding],
         return Plan(True, "Bloccato: prima va risolto un problema sui dati.", [task], missing,
                     ["Tutto l'account, finché il ticket non è chiuso"])
 
+    waiting: list[Waiting] = []
+    ctx = {"segnali_verdi": not _data_problems(checks)}
     tasks: list[Task] = []
     for c in open_reds:
-        tasks.extend(_from_red(c, account, camp))
+        tasks.extend(_from_red(c, account, camp, waiting, ctx))
     for c in yellows:
-        tasks.extend(_from_check(c, account))
+        tasks.extend(_from_check(c, account, waiting, ctx))
+    blocked = (camp or {}).get("blocked_ids")
     for f in findings:
-        t = _from_finding(f)
-        if t:
-            tasks.append(t)
+        tasks.extend(_from_finding(f, waiting, blocked))
     if camp:
-        tasks.extend(_campaign_tasks(camp, account))
+        tasks.extend(_campaign_tasks(camp, account, waiting))
     tasks.sort(key=lambda t: t.priority)
     headline = (f"{len(tasks)} {'cosa' if len(tasks) == 1 else 'cose'} da fare oggi."
                 if tasks else "Niente da fare oggi: l'account è a posto.")
-    return Plan(False, headline, tasks, missing, [])
+    return Plan(False, headline, tasks, missing, [], waiting)
 
 
-def _line(campaign_name: str) -> str:
-    """Linea di business dal naming <paese>|<funnel>|<LINEA>|... (es. AUTO_B2C, RENT_NLT)."""
-    parts = [p.strip() for p in campaign_name.split("|")]
-    return parts[2].replace(" I ", "_") if len(parts) > 2 and parts[2] else "altro"
-
-
-def _from_red(c: Check, account: dict, camp: dict | None = None) -> list[Task]:
+def _from_red(c: Check, account: dict, camp: dict | None, waiting: list[Waiting],
+              ctx: dict) -> list[Task]:
     """Rossi che non bloccano l'account: diventano attività ad alta priorità."""
     if c.name == "Andamento conversioni":
         if c.data.get("cause"):
-            return [_cause_task(c, account, camp)]
+            return _cause_task(c, account, camp, waiting)
         return [Task(
             title="I lead sono crollati: controlla la consegna delle campagne",
             module="Vincoli", level="serve_senior", priority=1, cosa=c.detail,
@@ -298,47 +361,67 @@ def _from_red(c: Check, account: dict, camp: dict | None = None) -> list[Task]:
                   "Guardate insieme cosa è cambiato nel periodo: creatività, pubblico, offerte"],
             non_fare="Non alzare il budget per avere più lead: peggioreresti il problema.",
             button="Fatto")]
-    return _from_check(c, account)
+    return _from_check(c, account, waiting, ctx)
 
 
-def _from_check(c: Check, account: dict) -> list[Task]:
+def _merge_groups(camps: list[dict]) -> list[list[dict]]:
+    """Gruppi di campagne davvero accorpabili: stessa linea, tipo, strategia e zona."""
+    groups: dict[tuple, list[dict]] = {}
+    for x in camps:
+        if is_brand(x["name"]):
+            continue
+        key = (line_of(x["name"]), x.get("type"), x.get("bidding"), zone_of(x["name"]))
+        groups.setdefault(key, []).append(x)
+    return list(groups.values())
+
+
+def _from_check(c: Check, account: dict, waiting: list[Waiting], ctx: dict) -> list[Task]:
     if c.data.get("attribution"):
         return []  # scarto di attribuzione col CRM: informazione, non un'attività
     if c.name == "Conversioni non-lead":
-        return [Task(
-            title="Togli dalle conversioni principali quelle che non sono lead",
+        task = Task(
+            title="Rendi secondarie le conversioni che non sono lead",
             module="Segnali", level=_level("strategia_obiettivo_valore"), priority=2,
-            cosa=c.detail,
-            perche=("La piattaforma cerca più persone come quelle che 'convertono'. Se conta "
-                    "come conversione un'iscrizione a YouTube, porta iscritti, non clienti."),
-            come=["Chiedi l'ok al senior", "In Google Ads: Obiettivi › Conversioni › imposta "
-                  "come secondarie le azioni indicate", "Controlla dopo 2 settimane il costo "
-                  "per lead vero"],
+            cosa=c.detail, perche=proposals()["conversioni_secondarie"]["perche"],
+            come=proposals()["conversioni_secondarie"]["procedura"],
             non_fare="Non eliminare le azioni di conversione: rendile secondarie.",
-            button="Chiedi l'ok al senior")]
+            button="Chiedi l'ok al senior")
+        return _rule("conversioni_secondarie",
+                     {"quota_non_lead": True, "segnali_verdi": ctx["segnali_verdi"],
+                      "in_test": None}, task, waiting)
     if c.name == "Conversioni per campagna":
-        camps = c.data.get("campaigns", [])
-        groups: dict[str, list[dict]] = {}
-        for x in camps:
-            groups.setdefault(_line(x["name"]), []).append(x)
-        steps = []
-        for line, xs in groups.items():
-            names = " + ".join(f"«{x['name']}» ({x['conversions']})" for x in xs)
-            steps.append(f"Linea {line}: unisci {names}" if len(xs) > 1 else
-                         f"Linea {line}: {names} da sola non basta, uniscila alla campagna "
-                         "principale della stessa linea")
-        return [Task(
-            title=(f"Accorpa {len(camps)} campagne che fanno troppe poche conversioni"
-                   if camps else "Accorpa le campagne che fanno troppe poche conversioni"),
-            module="Vincoli", level=_level("struttura_campagne"), priority=2,
-            cosa=(f"{len(camps)} campagne fanno meno di 30 conversioni al mese: tra parentesi "
-                  "quante ne hanno fatte negli ultimi 30 giorni." if camps else c.detail),
-            perche=("Sotto una certa soglia l'algoritmo non ha abbastanza esempi per imparare: "
-                    "offerte instabili e costi più alti. Insieme imparano di più."),
-            come=steps + ["Mostra questa scheda al senior; se è d'accordo prepari la campagna "
-                          "accorpata in pausa e lui la attiva"],
-            non_fare="Non accorpare le campagne Brand con le altre: restano separate.",
-            button="Chiedi l'ok al senior")]
+        tasks: list[Task] = []
+        min_conv = c.data.get("min_conv", 30)
+        groups = _merge_groups(c.data.get("campaigns", []))
+        alone = [g[0] for g in groups if len(g) == 1]
+        if alone:
+            waiting.append(Waiting(
+                f"Campagne con poche conversioni: {len(alone)}",
+                ["non vale: " + proposals()["accorpa_campagne"]["proponi_se"][5]["testo"]
+                 + ". Nessuna ha una campagna della stessa linea, tipo, strategia e zona con "
+                 "cui accorparla: " + "; ".join(f"«{x['name']}» ({x['conversions']})"
+                                                 for x in alone)
+                 + ". Lasciale così o parlane col senior."]))
+        for group in (g for g in groups if len(g) > 1):
+            names = [x["name"] for x in group]
+            keep = max(group, key=lambda x: x["conversions"])
+            task = Task(
+                title=f"Accorpa {len(group)} campagne: " + " + ".join(f"«{n}»" for n in names),
+                module="Vincoli", level=_level("struttura_campagne"), priority=2,
+                cosa=("Fanno " + ", ".join(f"{x['conversions']} ({x['name']})" for x in group)
+                      + f" conversioni al mese, tutte sotto le {min_conv}. Stessa linea, stesso "
+                      "tipo di campagna, stessa strategia e stessa zona: insieme imparano di "
+                      "più."),
+                perche=proposals()["accorpa_campagne"]["perche"],
+                come=[f"Resta «{keep['name']}», che ha più conversioni",
+                      *proposals()["accorpa_campagne"]["procedura"][1:]],
+                non_fare="Non accorpare campagne Brand, di zone o tipi diversi.",
+                button="Chiedi l'ok al senior")
+            tasks += _rule("accorpa_campagne", {
+                "sotto_soglia": True, "stessa_linea": True, "stesso_tipo": True,
+                "stessa_strategia": True, "stessa_zona": True, "almeno_due": len(group) > 1,
+                "brand": False, "in_test": None, "budget_cliente": None}, task, waiting)
+        return tasks
     titles = {
         "Riconciliazione con CRM": ("Fai controllare perché la piattaforma e il CRM non "
                                     "tornano", "Se la piattaforma conta lead che il CRM non ha "
@@ -366,7 +449,25 @@ def _from_check(c: Check, account: dict) -> list[Task]:
     return []
 
 
-def _from_finding(f: Finding) -> Task | None:
+def _from_finding(f: Finding, waiting: list[Waiting], blocked: set[str] | None = None
+                  ) -> list[Task]:
+    t = _finding_task(f)
+    if t is None:
+        return []
+    if f.issue_code == "diversity_low":
+        learning = None if blocked is None else f.object_id in blocked
+        return _rule("nuove_creativita", {"diversita_bassa": True, "campagna_lead": True,
+                                           "campagna_spenta": False,
+                                           "in_apprendimento": learning}, t, waiting)
+    if f.issue_code in ("fatigue_late", "fatigue_prepare"):
+        cid = f.evidence.get("campagna_id")
+        learning = None if blocked is None or cid is None else cid in blocked
+        return _rule("rinnova_creativita", {"stanca": True, "oltre_7_giorni": True,
+                                             "in_apprendimento": learning}, t, waiting)
+    return [t]
+
+
+def _finding_task(f: Finding) -> Task | None:
     ev, level = f.evidence, _level(f.action_key) if f.action_key else "puoi_farlo"
     if f.issue_code in ("fatigue_late", "fatigue_prepare"):
         late = f.issue_code == "fatigue_late"
@@ -374,16 +475,18 @@ def _from_finding(f: Finding) -> Task | None:
             title=(f"Sostituisci la creatività «{f.object_id}»: è stanca" if late
                    else f"Prepara una nuova versione di «{f.object_id}»"),
             module="Creatività", level=level, priority=1 if late else 2,
-            cosa=(f"Il tasso di clic è sceso del {ev['calo_ctr_pct']:.0f}% rispetto al suo "
+            cosa=((f"Negli ultimi 7 giorni ogni persona l'ha vista in media "
+                   f"{ev['frequenza_ultimi_7g']:.1f} volte, oltre il massimo di "
+                   f"{ev['frequenza_oltre']:g}. Il tasso di clic è a {ev['ctr_ultimi_7g_pct']}% "
+                   f"(picco {ev['ctr_picco_pct']}%).")
+                  if ev.get("frequenza_oltre") else
+                  f"Il tasso di clic è sceso del {ev['calo_ctr_pct']:.0f}% rispetto al suo "
                   f"momento migliore e le stesse persone la vedono sempre più spesso"
                   + (f"; ogni lead costa {ev['cpa_ultimi_7g']:.0f} € contro "
                      f"{ev['cpa_riferimento']:.0f} € di prima." if late and ev.get("cpa_ultimi_7g")
                      and ev.get("cpa_riferimento") else ".")),
-            perche=("Quando una creatività stanca, Meta la mostra a un pubblico sempre più "
-                    "ristretto e i costi salgono."),
-            come=["Prepara una nuova versione dello stesso concept: stesso messaggio, immagine "
-                  "e frase d'attacco nuove", "Caricala nello stesso ad set, accanto alla vecchia",
-                  "Quando la nuova ha almeno 7 giorni di spesa, metti in pausa la vecchia"],
+            perche=proposals()["rinnova_creativita"]["perche"],
+            come=proposals()["rinnova_creativita"]["procedura"],
             non_fare=("Non spegnere la vecchia prima che la nuova sia partita: perderesti "
                       "volume per giorni."),
             button="Fatto")

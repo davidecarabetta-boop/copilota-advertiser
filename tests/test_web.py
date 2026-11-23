@@ -75,3 +75,27 @@ def test_tracking_save(client):
     assert t["1000000001"]["consent_rate_pct"] == 71.5
     assert t["act_1000000002"]["capi_active"] is True
     assert t["act_1000000002"]["consent_mode_v2"] is None
+
+
+def test_register_actions(client):
+    from datetime import date
+
+    from copilota import register
+
+    c, folder = client
+    e = {"id": "T-1", "created": date(2026, 11, 23), "account_id": "1000000001",
+         "platform": "google", "campaign_id": "1", "campaign_name": "pmax_test",
+         "kind": "da_non_toccare", "title": "Non toccare la PMax", "why": "budget cambiato",
+         "expected": "", "decides": "Specialist", "status": "proposta", "decided": None,
+         "applied": None, "check_after_days": 14, "until": date(2099, 1, 1), "baseline": "",
+         "result": "", "note": ""}
+    register.add(folder, e)
+    assert "pmax_test" in c.get("/a/demo/1000000001").text  # in "Da non toccare"
+    assert "Non toccare la PMax" in c.get("/a/demo/1000000001?tab=registro").text
+    url = "/a/demo/1000000001/registro/T-1"
+    r = c.post(url, data={"action": "applicata"})  # non ancora approvata
+    assert "non si pu" in r.text and register.read(folder)[0]["status"] == "proposta"
+    c.post(url, data={"action": "approva", "note": "ok specialist"})
+    assert register.read(folder)[0]["status"] == "approvata"
+    assert c.post("/a/demo/act_1000000002/registro/T-1",
+                  data={"action": "approva"}).status_code == 404  # altro account

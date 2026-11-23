@@ -9,6 +9,7 @@ from collections import defaultdict
 
 from copilota.config import load_client
 from copilota.data import DataSource, Row
+from copilota.rules import funnel_of, line_of
 
 
 def _key(name: str) -> str:
@@ -85,20 +86,84 @@ def campaign_quality(source: DataSource, account: Row) -> dict | None:
     }
 
 
-def judge(q: dict, th: dict) -> dict:
-    """Campagne che spendono molto per pochi lead buoni, e la migliore dove spostare budget."""
+KPI_FIELDS = {  # metrica della campagna -> KPI dello specialist, con etichetta leggibile
+    "cost_per_lead": ("cost_per_lead", "costo per lead"),
+    "cost_per_qualified": ("cost_per_qualified", "costo per lead qualificato"),
+    "cost_per_contract": ("cost_per_contract", "costo per contratto"),
+}
+
+
+def read_kpis(source: DataSource) -> dict[tuple[str, str], Row]:
+    """{(piattaforma, linea): KPI} inseriti dallo specialist; {} se non ci sono."""
+    try:
+        return {(k["platform"], k["line"].upper()): k for k in source.read("kpi")}
+    except FileNotFoundError:
+        return {}
+
+
+def judge(q: dict, th: dict, kpis: dict, platform: str, blocked_ids: set[str] = frozenset()
+          ) -> dict:
+    """Campagne fuori dai KPI dello specialist (per piattaforma e linea).
+
+    Senza KPI il rendimento non si giudica: `missing_kpi` elenca le linee da completare.
+    """
     s = th["campagne"]
-    avg = q["avg_cost_per_qualified"]
+    tol = 1 + s["tolleranza_kpi_pct"] / 100
     rated = [r for r in q["rows"] if r["leads"] >= s["lead_min"]]
     total = sum(r["spend"] for r in rated)
-    best = min((r for r in rated if r["qualified"] >= s["trattative_min_migliore"]),
-               key=lambda r: r["cost_per_qualified"], default=None)
-    poor = []
-    if avg:
-        for r in rated:
-            share = r["spend"] / total * 100 if total else 0
-            cpq = r["cost_per_qualified"]
-            if share >= s["quota_spesa_min_pct"] and (cpq is None or cpq >= avg * s["volte_media"]):
-                poor.append({**r, "share_pct": round(share)})
+    out, within, missing = [], [], set()
+    for r in q["rows"]:
+        line = line_of(r["name"])
+        k = kpis.get((platform, line))
+        r["kpi"] = k
+        r["line"], r["funnel"] = line, funnel_of(r["name"])
+        if k is None:
+            if r["leads"]:
+                missing.add(line)
+            continue
+        if r not in rated:
+            continue
+        over = []
+        for metric, (kfield, label) in KPI_FIELDS.items():
+            target, value = k.get(kfield), r[metric]
+            if target and (value is None and r["spend"] > target or value and value > target * tol):
+                over.append({"metric": label, "value": value, "target": target})
+        r["over"] = over
+        share = r["spend"] / total * 100 if total else 0
+        if over and share >= s["quota_spesa_min_pct"]:
+            out.append({**r, "share_pct": round(share),
+                        "in_test": r["campaign_id"] in blocked_ids})
+        elif not over:
+            within.append(r)
     utm_lost = [(u, n) for u, n in q["unmatched"] if n >= s["utm_non_abbinati_min_lead"]]
-    return {"poor": poor, "best": best, "avg": avg, "utm_lost": utm_lost}
+    return {"out": out, "within": within, "missing_kpi": sorted(missing), "utm_lost": utm_lost,
+            "kpis": kpis}
+
+
+def volume_check(source: DataSource, account: Row, th: dict, kpis: dict) -> list[dict]:
+    """Lead degli ultimi 30 giorni per linea (come li conta la piattaforma, campagne a
+    conversione) contro il volume mensile richiesto dallo specialist."""
+    from datetime import timedelta
+
+    platform = account["platform"]
+    table, conv = (("ga_campaign_daily", "conversions") if platform == "google"
+                   else ("meta_ad_daily", "leads"))
+    rows = [r for r in source.read(table) if r["account_id"] == account["account_id"]]
+    if not rows:
+        return []
+    today = max(r["date"] for r in rows)
+    names = {}
+    if platform == "meta":
+        names = {c["campaign_id"]: c["campaign_name"] for c in source.read("meta_campaigns")}
+    per_line: dict[str, float] = defaultdict(float)
+    for r in rows:
+        if r["date"] >= today - timedelta(days=29):
+            name = r.get("campaign_name") or names.get(r["campaign_id"], "")
+            per_line[line_of(name)] += r[conv]
+    tol = 1 - th["campagne"]["tolleranza_volume_pct"] / 100
+    out = []
+    for (plat, line), k in kpis.items():
+        need = k.get("leads_per_month")
+        if plat == platform and need and per_line.get(line, 0) < need * tol:
+            out.append({"line": line, "leads": round(per_line.get(line, 0)), "target": need})
+    return out

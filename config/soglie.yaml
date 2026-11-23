@@ -43,6 +43,7 @@ creativita_semaforo:          # confronto di ogni concept con i suoi primi 7 gio
     cpa_oltre_target_pct: 20
     giorni_consecutivi: 3
   nota: "CPM in salita con CTR stabile = asta/stagionalità, non affaticamento"
+  frequenza_max_7g: 3            # oltre: prepara il cambio anche se il CTR regge (confermato 2026-11-22)
   salita_pct: 10                 # "in salita" = ultimi 7 giorni oltre il 10% sopra il periodo di confronto
   impressioni_min_finestra: 1000 # sotto, CTR troppo rumoroso: "dati insufficienti"
   attivo_se_spesa_ultimi_giorni: 3
@@ -53,11 +54,18 @@ creativita_diversita:
   formati_min_per_campagna: 2
   quota_spesa_max_singolo_concept_pct: 50
 
-campagne:                        # qualità dei lead per campagna (export CRM per UTM campaign)
+selezione:                       # passo 2 della pipeline: quali campagne guardare (docs/pipeline.md)
+  tolleranza_target_pct: 10      # sotto target se il CPA supera il target di oltre il 10%
+  quota_persa_budget_min_pct: 20 # opportunità di scala: in target e perde almeno il 20% per budget
+  spesa_min: 300                 # sotto questa spesa nella finestra la campagna non si guarda
+  frequenza_max_mese: 6          # frequenza sulla finestra di 30 giorni oltre cui segnalare (bozza)
+  passo_budget_pct: 20           # effetto atteso calcolato su un aumento di budget consentito (regola budget_giornaliero)
+
+campagne:                        # giudizio delle campagne contro i KPI dello specialist
   lead_min: 30                   # sotto, troppo pochi lead per giudicare la campagna
-  volte_media: 2                 # costa almeno il doppio della media per lead in trattativa
-  quota_spesa_min_pct: 10        # e pesa almeno il 10% della spesa: vale la pena intervenire
-  trattative_min_migliore: 10    # per indicarla come "dove spostare budget"
+  quota_spesa_min_pct: 10        # pesa almeno il 10% della spesa: vale la pena segnalarla
+  tolleranza_kpi_pct: 10         # si segnala quando supera il KPI di oltre il 10% (confermato 2026-11-22)
+  tolleranza_volume_pct: 10      # lead del mese sotto il volume richiesto di oltre il 10%
   utm_non_abbinati_min_lead: 50  # lead con UTM di campagne che non si trovano: da sistemare
 
 google:

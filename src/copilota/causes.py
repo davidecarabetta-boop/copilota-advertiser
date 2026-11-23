@@ -60,7 +60,7 @@ def find_cause(source: DataSource, account: Row, crash_from: date, today: date,
         campaign_id = (e["object_id"] if e["object_type"] == "campaign" else
                        next((r["campaign_id"] for r in rows if r[col] == e["object_id"]), ""))
         cause = {
-            "kind": "pausa" if paused else "budget", "date": e["date"],
+            "kind": "pausa" if paused else "budget", "date": e["date"], "today": today,
             "campaign_id": campaign_id,
             "object_type": e["object_type"], "object_id": e["object_id"],
             "object_name": e["object_name"], "share_pct": round(share),

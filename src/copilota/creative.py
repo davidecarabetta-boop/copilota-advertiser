@@ -150,6 +150,9 @@ def fatigue(rows: list[Row], th: dict, as_of: date, target_cpa: float | None) ->
         return {"state": LATE, **ev}
     if drop >= s["prepara_cambio"]["ctr_calo_dal_picco_pct"] and (freq_up or reach_down):
         return {"state": PREPARE, **ev}
+    if last.frequency > s["frequenza_max_7g"]:
+        # le stesse persone la vedono troppo spesso: si prepara il cambio anche se il CTR regge
+        return {"state": PREPARE, **ev, "frequenza_oltre": s["frequenza_max_7g"]}
     if cpm_up and drop < s["prepara_cambio"]["ctr_calo_dal_picco_pct"]:
         ev["nota"] = s["nota"]
     return {"state": OK, **ev}
@@ -197,7 +200,7 @@ def analyze_account(source: DataSource, account: Row, th: dict, as_of: date | No
                 findings.append(Finding(
                     as_of, acc, "creativita", "concept", concept,
                     "fatigue_late" if st["state"] == LATE else "fatigue_prepare",
-                    evidence={"campagna": cname, **st},
+                    evidence={"campagna": cname, "campagna_id": cid, **st},
                     proposal={"azione": "nuova creatività sullo stesso concept, poi pausa "
                               "della vecchia quando la nuova è a regime",
                               "brief": "mantenere angolo e formato che funzionano, cambiare "

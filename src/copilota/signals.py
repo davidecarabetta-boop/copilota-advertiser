@@ -447,10 +447,13 @@ def check_account(source: DataSource, account: Row, th: dict) -> list[Check]:
     month = today - timedelta(days=29)
     per_camp: dict[str, float] = defaultdict(float)
     days_seen: dict[str, set] = defaultdict(set)
+    meta_of: dict[str, dict] = {}  # tipo e strategia: servono a capire cosa si può accorpare
     for r in rows:
         if r["date"] >= month:
             per_camp[r["campaign_label"]] += r[conv_col]
             days_seen[r["campaign_label"]].add(r["date"])
+            meta_of[r["campaign_label"]] = {
+                "type": r.get("campaign_type", "?"), "bidding": r.get("bidding_strategy", "?")}
     min_conv = vol["conversioni_min_mese_per_campagna"]
     min_days = vol["giorni_min_prima_di_giudicare"]
     # le campagne Brand restano separate per scelta: non si propongono da accorpare
@@ -465,7 +468,9 @@ def check_account(source: DataSource, account: Row, th: dict) -> list[Check]:
         add("Volume", "Conversioni per campagna", Status.YELLOW,
             f"Sotto le {min_conv} conversioni al mese: {names}. "
             "L'algoritmo impara poco: valutare di accorpare.",
-            data={"campaigns": [{"name": c, "conversions": round(n)} for c, n in low]})
+            data={"campaigns": [{"name": c, "conversions": round(n), **meta_of.get(c, {})}
+                                for c, n in low],
+                  "min_conv": min_conv})
     else:
         add("Volume", "Conversioni per campagna", Status.GREEN,
             f"Tutte le campagne sopra le {min_conv} conversioni al mese.")

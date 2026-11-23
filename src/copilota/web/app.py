@@ -19,10 +19,13 @@ from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from copilota.campaigns import campaign_quality, judge
+from copilota import register
+from copilota.campaigns import campaign_quality, judge, read_kpis, volume_check
 from copilota.config import CONFIG_DIR, load_thresholds
 from copilota.creative import analyze_account
 from copilota.data import CsvSource, parse_rows, write_table
+from copilota.diagnosis import diagnose
+from copilota.selection import select
 from copilota.signals import META_CONV_OBJECTIVES, check_account, lead_quality, quality_measured
 from copilota.tasks import build_plan
 
@@ -107,10 +110,58 @@ def evaluate(source, account: dict, as_of: date | None) -> dict:
     findings = (analyze_account(source, account, th, as_of, target_cpa(account["client"]))
                 if account["platform"] == "meta" else [])
     cq = campaign_quality(source, account)
-    camp = {**judge(cq, th), "from": cq["from"], "to": cq["to"]} if cq else None
+    kpis = read_kpis(source)
+    status = [s for s in _safe(source, "object_status")
+              if s["account_id"] == account["account_id"]]
+    blocked_ids = {s["campaign_id"] or s["object_id"] for s in status
+                   if s["learning"] or s["in_test"]}
+    camp = {"blocked_ids": blocked_ids} if status else None
+    if cq:
+        camp = {**judge(cq, th, kpis, account["platform"], blocked_ids),
+                "from": cq["from"], "to": cq["to"], "status_known": bool(status),
+                "blocked_ids": blocked_ids if status else None,
+                "volume": volume_check(source, account, th, kpis)}
+    plan = build_plan(account, checks, findings, camp)
+    for s in status:  # oggetti in test o apprendimento: da non toccare
+        if s["learning"] or s["in_test"]:
+            why = "in un test" if s["in_test"] else "in apprendimento"
+            until = f" fino al {s['until']:%d/%m}" if s["until"] else ""
+            plan.dont_touch.append(f"«{s['object_name']}»: {why}{until}. {s['note']}".strip())
+    today = as_of or date.today()
+    log = [e for e in _safe(source, "change_log") if e["account_id"] == account["account_id"]]
+    for e in register.dont_touch(log, today):  # blocchi decisi nel registro
+        until = f" fino al {e['until']:%d/%m}" if e["until"] else ""
+        plan.dont_touch.append(f"«{e['campaign_name']}»{until}: {e['why']} (registro)")
+    sel = select(source, account, th, kpis)
+    if sel.get("available"):
+        for group in ("below", "scale", "no_target"):
+            for c in sel[group]:
+                c["diagnosis"] = diagnose(source, c, th, cq, findings)
     return {"checks": checks, "findings": findings, "campaigns": cq, "camp": camp,
-            "plan": build_plan(account, checks, findings, camp),
-            "quality": quality_measured(source, account)}
+            "plan": plan, "quality": quality_measured(source, account), "selection": sel,
+            "register": _register_view(log, today)}
+
+
+def _register_view(log: list, today: date) -> dict:
+    """Voci del registro raggruppate per stato, con data di verifica e numeri di partenza."""
+    import json
+
+    items = []
+    for e in log:
+        try:
+            base = json.loads(e["baseline"]) if e["baseline"] else []
+        except ValueError:
+            base = []
+        check = register.check_date(e)
+        items.append({**e, "baseline_rows": base if isinstance(base, list) else [base],
+                      "check": check, "is_due": e in register.due(log, today),
+                      "label": register.STATO_LABEL.get(e["status"], e["status"]),
+                      "actions": [a for a, (src, _) in register.AZIONI.items()
+                                  if e["status"] in src]})
+    order = {s: i for i, s in enumerate(register.STATI)}
+    items.sort(key=lambda x: (not x["is_due"], order.get(x["status"], 9), x["id"]))
+    return {"items": items, "open": sum(x["status"] in ("proposta", "approvata") or x["is_due"]
+                                        for x in items)}
 
 
 def sidebar() -> list[dict]:
@@ -173,6 +224,29 @@ def account_page(request: Request, slug: str, account_id: str, tab: str = "oggi"
         "semaforo_class": SEMAFORO_CLASS,
         "checks_sorted": sorted(ev["checks"], key=lambda c: -c.status.rank),
     }, current=(slug, account_id))
+
+
+@app.post("/a/{slug}/{account_id}/registro/{entry_id}")
+def register_action(slug: str, account_id: str, entry_id: str, action: str = Form(...),
+                    note: str = Form(""), result: str = Form("")):
+    """Decisione o avanzamento di una voce del registro. Non scrive sulle piattaforme."""
+    folder = client_dir(slug)
+    base = f"/a/{slug}/{account_id}?tab=registro"
+    if action not in register.AZIONI:
+        raise HTTPException(400, "Azione non valida")
+    entry = next((e for e in register.read(folder) if e["id"] == entry_id), None)
+    if entry is None or entry["account_id"] != account_id:
+        raise HTTPException(404, "Voce non trovata")
+    if action == "verificata" and not result.strip():
+        msg = "Per chiudere la verifica scrivi il risultato"
+    else:
+        try:
+            e = register.apply_action(folder, entry_id, action, date.today(), note.strip(),
+                                      result.strip())
+            msg = f"{e['id']}: {register.STATO_LABEL[e['status']]}"
+        except ValueError as err:
+            msg = str(err)
+    return RedirectResponse(f"{base}&msg={quote(msg)}", status_code=303)
 
 
 
@@ -302,3 +376,58 @@ async def tracking_save(request: Request, slug: str):
         rows.append(row)
     write_table(folder, "tracking_status", rows)
     return RedirectResponse(f"/c/{slug}?msg=Stato del tracciamento salvato", status_code=303)
+
+
+# ---------- Regole di lavoro ----------
+
+@app.get("/regole", response_class=HTMLResponse)
+def rules_page(request: Request):
+    regole = yaml.safe_load((CONFIG_DIR / "regole.yaml").read_text(encoding="utf-8"))
+    return page(request, "rules.html", {"proposte": regole["proposte"],
+                                        "azioni": regole["azioni"]})
+
+
+# ---------- KPI dello specialist ----------
+
+KPI_FIELDS = ["cost_per_lead", "cost_per_qualified", "cost_per_contract", "leads_per_month",
+              "monthly_budget"]
+
+
+def _lines_in_data(source) -> list[tuple[str, str]]:
+    """Coppie (piattaforma, linea) presenti nelle campagne del cliente."""
+    from copilota.rules import line_of
+
+    found = set()
+    for r in _safe(source, "ga_campaign_daily"):
+        found.add(("google", line_of(r["campaign_name"])))
+    for c in _safe(source, "meta_campaigns"):
+        found.add(("meta", line_of(c["campaign_name"])))
+    return sorted(x for x in found if x[1] != "?")
+
+
+@app.get("/c/{slug}/kpi", response_class=HTMLResponse)
+def kpi_form(request: Request, slug: str):
+    source = CsvSource(client_dir(slug))
+    current = read_kpis(source)
+    pairs = sorted(set(_lines_in_data(source)) | set(current))
+    rows = [{"platform": p, "line": line, **(current.get((p, line)) or {})} for p, line in pairs]
+    return page(request, "kpi.html", {"slug": slug, "client": client_label(slug), "rows": rows})
+
+
+@app.post("/c/{slug}/kpi")
+async def kpi_save(request: Request, slug: str):
+    folder = client_dir(slug)
+    form = await request.form()
+    rows = []
+    for key in form.getlist("key"):
+        platform, line = key.split("|", 1)
+
+        def num(field: str, key: str = key) -> float | None:
+            v = str(form.get(f"{key}__{field}", "")).strip().replace(",", ".")
+            return float(v) if v else None
+
+        values = {f: num(f) for f in KPI_FIELDS}
+        if any(v is not None for v in values.values()):
+            rows.append({"platform": platform, "line": line, **values})
+    write_table(folder, "kpi", rows)
+    return RedirectResponse(f"/c/{slug}?msg=KPI salvati: {len(rows)} linee", status_code=303)

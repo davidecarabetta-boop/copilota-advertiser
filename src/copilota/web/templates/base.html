@@ -41,7 +41,7 @@ a{color:var(--accent)}
 .pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
 .pill.ok{background:var(--ok-soft);color:var(--ok)}.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.bad{background:var(--bad-soft);color:var(--bad)}.pill.neutral{background:var(--sunk);color:var(--muted)}
 .tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:4px;background:var(--sunk);color:var(--muted)}
-.tag.level-puoi_farlo{background:var(--ok-soft);color:var(--ok)}.tag.level-serve_senior{background:var(--accent-soft);color:var(--accent)}
+.tag.level-puoi_farlo{background:var(--ok-soft);color:var(--ok)}.tag.level-decide_specialist{background:var(--warn-soft);color:var(--warn)}.tag.level-serve_senior{background:var(--accent-soft);color:var(--accent)}
 .banner{border-radius:10px;padding:14px 16px;display:grid;gap:4px}
 .banner.bad{background:var(--bad-soft)}.banner.warn{background:var(--warn-soft)}.banner.ok{background:var(--ok-soft)}.banner.info{background:var(--accent-soft)}
 .banner b{font-family:var(--f-display);font-size:17px}
@@ -85,6 +85,11 @@ label{display:grid;gap:4px;font-weight:500}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
 details summary{cursor:pointer;color:var(--accent);font-weight:500}
 .matrix td{text-align:center;font-variant-numeric:tabular-nums}
+ul.conds{list-style:none;margin:6px 0;padding:0;display:grid;gap:4px}
+ul.conds li.ok{color:var(--ok)} ul.conds li.no{color:var(--bad)} ul.conds li.unk{color:var(--warn)}
+.rule{display:grid;gap:10px}
+.rule h3{font-size:18px}
+.top nav a{margin-left:4px}
 </style>
 </head>
 <body>
@@ -92,6 +97,7 @@ details summary{cursor:pointer;color:var(--accent);font-weight:500}
   <h1><a href="/">Copilota Advertiser</a></h1>
   <span class="tagline">Ti dice cosa fare su ogni account, in ordine di importanza.</span>
   <span class="local">in locale · non modifica le piattaforme</span>
+  <nav aria-label="Pagine"><a href="/regole">Regole di lavoro</a></nav>
 </header>
 <div class="app">
   <nav class="side" aria-label="Account">

@@ -74,6 +74,41 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "date": date.fromisoformat, "client": str, "source": str, "utm_campaign": str,
         "leads": int, "qualified_leads": int, "contracts": int,
     },
+    # Fotografia per campagna (docs/pipeline.md): oggi costruita dal Copilota, domani da Ads
+    # Guardian. Finestra assestata: si escludono gli ultimi 7 giorni.
+    "campaign_snapshot": {
+        "account_id": str, "platform": str, "campaign_id": str, "campaign_name": str,
+        "campaign_type": str, "bidding": str, "bid_status": str,
+        "date_from": date.fromisoformat, "date_to": date.fromisoformat,
+        "spend": float, "conversions": float, "conversions_value": float,
+        "target_cpa": _opt(float), "target_roas": _opt(float), "target_source": str,
+        "budget_daily": _opt(float), "budget_planned_month": _opt(float),
+        "pacing_pct": _opt(float), "lost_is_budget_pct": _opt(float),
+        "lost_is_rank_pct": _opt(float), "frequency": _opt(float),
+    },
+    # Registro delle proposte (passo 4-5 della pipeline): dalla proposta alla verifica.
+    # stato: proposta | approvata | scartata | applicata | verificata
+    # tipo: modifica | da_non_toccare (blocco fino a `until`) | verifica (controllo da fare)
+    "change_log": {
+        "id": str, "created": date.fromisoformat, "account_id": str, "platform": str,
+        "campaign_id": str, "campaign_name": str, "kind": str, "title": str, "why": str,
+        "expected": str, "decides": str, "status": str,
+        "decided": _opt(date.fromisoformat), "applied": _opt(date.fromisoformat),
+        "check_after_days": _opt(int), "until": _opt(date.fromisoformat),
+        "baseline": str, "result": str, "note": str,
+    },
+    # KPI dello specialist per piattaforma e linea di business (es. meta / AUTO_B2C)
+    "kpi": {
+        "platform": str, "line": str, "cost_per_lead": _opt(float),
+        "cost_per_qualified": _opt(float), "cost_per_contract": _opt(float),
+        "leads_per_month": _opt(float), "monthly_budget": _opt(float),
+    },
+    # Stato degli oggetti da non toccare: test in corso e apprendimento (dagli MCP)
+    "object_status": {
+        "account_id": str, "object_type": str, "object_id": str, "object_name": str,
+        "campaign_id": str, "learning": _bool, "in_test": _bool, "until": _opt(date.fromisoformat),
+        "note": str,
+    },
     # Spesa per campagna in un periodo (serve a confrontare con i lead maturi del CRM)
     "campaign_period": {
         "account_id": str, "campaign_id": str, "campaign_name": str,
