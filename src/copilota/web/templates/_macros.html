@@ -1,0 +1,80 @@
+{% macro eur(v) %}{{ '{:,.0f} €'.format(v).replace(',', '.') if v is not none else '—' }}{% endmacro %}
+
+{% macro sev_label(s) %}{{ {'critico': 'Critico', 'attenzione': 'Attenzione', 'info': 'Info'}[s] }}{% endmacro %}
+
+{% macro conditions(t) %}
+  {% if t.conditions %}
+  <details><summary>Perché te lo propongo</summary>
+    <ul class="conds">{% for c in t.conditions %}
+      {% if not c.exclusion %}
+      <li class="{{ {True:'ok', False:'no', None:'unk'}[c.state] }}">{{ {True:'✓', False:'✗', None:'?'}[c.state] }} {{ c.text }}{% if c.state is none %} <span class="muted">(da controllare tu)</span>{% endif %}</li>
+      {% else %}
+      <li class="{{ {True:'no', False:'ok', None:'unk'}[c.state] }}">{{ {True:'✗', False:'✓', None:'?'}[c.state] }} Non deve succedere che: {{ c.text | lower }}{% if c.state is none %} <span class="muted">(da controllare tu)</span>{% endif %}</li>
+      {% endif %}
+    {% endfor %}</ul>
+    {% if t.rule %}<p class="muted">Regola «{{ t.rule }}» in <a href="/regole#{{ t.rule }}">Regole di lavoro</a>.</p>{% endif %}
+  </details>
+  {% endif %}
+{% endmacro %}
+
+{# Scheda di dettaglio di un'attività del Copilota #}
+{% macro task_detail(t, key, crumb, sev, campaigns_href) %}
+  <div class="top"><span class="badge {{ sev }}">{{ sev_label(sev) }}</span><span>{{ t.level_label }} · {{ t.module }}</span></div>
+  <h2>{{ t.title }}</h2>
+  <p class="crumb">{{ crumb }}</p>
+  <div class="buttons">
+    {% if t.ticket %}<button class="btn primary" type="button" data-copy="ticket-{{ key }}">Copia il testo del ticket</button>{% endif %}
+    {% if t.link %}<a class="btn {{ '' if t.ticket else 'primary' }}" href="{{ t.link[1] }}" target="_blank" rel="noopener">{{ t.link[0] }} ↗</a>{% endif %}
+    <a class="btn" href="{{ campaigns_href }}">Campagne dell'account</a>
+  </div>
+  <div class="sec"><h3>Cosa succede</h3><p>{{ t.cosa }}</p></div>
+  <div class="sec"><h3>Perché conta</h3><p>{{ t.perche }}</p></div>
+  <div class="sec"><h3>Come fare</h3><ol>{% for s in t.come %}<li>{{ s }}</li>{% endfor %}</ol></div>
+  <div class="sec dont"><h3>Non fare</h3><p>{{ t.non_fare }}</p></div>
+  {% if t.ticket %}
+  <div class="ticket">
+    <label for="ticket-{{ key }}">Testo del ticket, pronto da mandare</label>
+    <textarea id="ticket-{{ key }}" rows="8" readonly>{{ t.ticket }}</textarea>
+  </div>
+  {% endif %}
+  {% if t.level == 'serve_senior' and not t.ticket %}<p class="note">Questa decisione spetta al senior: mostragli questa scheda prima di toccare qualcosa.</p>{% elif t.level == 'decide_specialist' %}<p class="note">Questa decisione spetta allo specialist: mostragli questa scheda.</p>{% endif %}
+  {% if t.verifica %}<div class="sec"><h3>Verifica</h3><p>{{ t.verifica }}</p></div>{% endif %}
+  {{ conditions(t) }}
+{% endmacro %}
+
+{# Scheda di dettaglio di una proposta del registro #}
+{% macro entry_detail(e, crumb, sev, al) %}
+  {% set ACT = {'approva': 'Approva', 'scarta': 'Scarta', 'applicata': "L'ho applicata", 'fatta': "Fatto", 'verificata': 'Chiudi con il risultato'} %}
+  {% set days = e.days %}
+  <div class="top"><span class="badge {{ sev }}">{{ sev_label(sev) }}</span><span>{% if e.pipeline %}{{ e.pipeline }} · passo {{ e.step }} · {% endif %}{% if e.executor %}Esegue: {{ e.executor }} · {% endif %}Decide: {{ e.decides }} · {{ e.label }}</span></div>
+  <h2>{{ e.title }}</h2>
+  <p class="crumb">{{ crumb }} <span class="mono">{{ e.campaign_id | replace('|', ' · ') }}</span></p>
+  {% if e.waits %}<p class="note">Aspetta {{ 'il passo' if e.waits | length == 1 else 'i passi' }}: {% for w in e.waits %}{{ w.step or '' }} «{{ w.title }}»{{ '; ' if not loop.last }}{% endfor %}.</p>
+  {% elif e.after %}<p class="note">Si fa dal {{ e.after.strftime('%d/%m') }}.</p>{% endif %}
+  {% if e.pipeline %}<p><a href="/c/{{ slug }}/brief?id={{ e.pipeline }}">Vedi il brief e tutta la pipeline</a></p>{% endif %}
+  {% if e.actions and not al %}
+  <form method="post" action="/a/{{ slug }}/{{ e.account_id }}/registro/{{ e.id }}" class="form-row">
+    <label>Nota <input name="note" placeholder="facoltativa: chi ha deciso, cosa hai fatto"></label>
+    {% if 'verificata' in e.actions %}<label>Risultato <input name="result" placeholder="es. CPA da 23,8 a 20,1 €" required></label>{% endif %}
+    <div class="buttons">{% for a in e.actions %}<button class="btn {{ 'primary' if loop.first else '' }}" name="action" value="{{ a }}">{{ ACT[a] }}</button>{% endfor %}</div>
+  </form>
+  {% endif %}
+  {% set names = e.campaign_name.split(' + ') %}
+  {% for b in e.baseline_rows %}
+  <p class="metrics-title">Numeri di partenza{% if names | length == e.baseline_rows | length %} · {{ names[loop.index0] }}{% endif %} · dal {{ b.date_from }} al {{ b.date_to }}</p>
+  <div class="metrics">
+    <div><span>Spesa</span><b>{{ eur(b.spend) }}</b></div>
+    <div><span>Conversioni</span><b>{{ '{:,.0f}'.format(b.conversions).replace(',', '.') }}</b></div>
+    <div><span>Costo per conversione</span><b>{{ ('%.2f €' % b.cpa).replace('.', ',') if b.cpa else '—' }}</b></div>
+    <div><span>Target</span><b>{{ eur(b.target_cpa) }}</b></div>
+    <div><span>Budget giornaliero</span><b>{{ eur(b.budget_daily) }}</b></div>
+    <div><span>Persa per ranking</span><b>{{ '%.0f%%' % b.lost_is_rank_pct if b.lost_is_rank_pct is not none else '—' }}</b></div>
+  </div>
+  {% endfor %}
+  <div class="sec"><h3>Perché</h3><p>{{ e.why }}</p></div>
+  {% if e.expected %}<div class="sec"><h3>Cosa ci aspettiamo</h3><p>{{ e.expected }}</p></div>{% endif %}
+  <div class="sec"><h3>Quando si guarda il risultato</h3><p>{% if e.check %}Dal {{ e.check.strftime('%d/%m') }}, confrontando con i numeri di partenza.{% elif e.check_after_days %}{{ e.check_after_days }} giorni dopo averla applicata, confrontando con i numeri di partenza.{% else %}Non previsto.{% endif %}</p></div>
+  {% if e.decided or e.applied %}<p class="muted">{% if e.decided %}Decisa il {{ e.decided.strftime('%d/%m') }}{% endif %}{% if e.applied %} · applicata il {{ e.applied.strftime('%d/%m') }}{% endif %}</p>{% endif %}
+  {% if e.result %}<div class="sec"><h3>Risultato</h3><p>{{ e.result }}</p></div>{% endif %}
+  {% if e.note %}<div class="sec"><h3>Note</h3><p>{{ e.note }}</p></div>{% endif %}
+{% endmacro %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Scheda cliente · {{ client }} · Copilota Advertiser{% endblock %}
+{% block body %}
+{% set eur = m.eur %}
+{% set LABEL = {'cosa_vende': 'Cosa vende', 'zone': 'Dove', 'come_si_vende': 'Come si vende', 'margini': 'Margini', 'stagionalita': 'Stagionalità', 'vincoli': 'Vincoli'} %}
+<header class="page-head">
+  <div>
+    <h1>Scheda cliente</h1>
+    <p class="meta">{{ client }} · lo studio del cliente da cui parte ogni brief · Dati {{ dates }}{% if p.period %} · fotografia campagne dal {{ p.period[0].strftime('%d/%m') }} al {{ p.period[1].strftime('%d/%m') }}{% endif %}</p>
+  </div>
+</header>
+
+<h2 class="section-title">Chi è</h2>
+<p class="muted">Quello che dai dati non si legge. La bozza la scrive Claude, lo specialist conferma. File <code>data/{{ slug }}/profilo.yaml</code>.</p>
+<div class="metrics" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+  {% for k, label in LABEL.items() %}{% set v = p.manual.get(k) or {} %}
+  <div><span>{{ label }} {% if v.confermato %}<span class="badge ok">confermato</span>{% else %}<span class="badge attenzione">da confermare</span>{% endif %}</span>
+    <p>{{ v.testo or '—' }}</p><span class="subtle">{{ v.fonte or 'da chiedere' }}</span></div>
+  {% endfor %}
+</div>
+
+<h2 class="section-title">Come spende</h2>
+<p class="muted">Spesa per linea nella fotografia delle campagne. Obiettivo: {{ (p.objective or '?') | replace('_', ' ') }}. Perimetro: {{ p.perimeter | join(', ') }}.</p>
+<div class="card tablewrap"><table>
+  <thead><tr><th>Linea</th><th class="num">Google</th><th class="num">Meta</th><th class="num">Quota della spesa</th><th class="num">Campagne</th></tr></thead>
+  <tbody>{% for r in p.structure %}<tr><td>{{ r.line }}</td><td class="num">{{ eur(r.google) }}</td><td class="num">{{ eur(r.meta) }}</td><td class="num">{{ '%.0f%%' % r.share }}</td><td class="num">{{ r.campaigns }}</td></tr>{% endfor %}</tbody>
+</table></div>
+
+<h2 class="section-title">Cosa funziona, secondo il CRM</h2>
+<p class="muted">Costo per lead arrivato in trattativa o oltre, sulle campagne con abbastanza lead maturi. È la misura che conta: non quanti lead, ma quanti buoni.</p>
+<div class="board" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+  <div class="list"><div class="group"><span>Le migliori</span></div>
+    {% for r in p.best %}<div class="row" style="cursor:default"><span class="sev attenzione" style="background:var(--ok)"></span><span class="t">{{ r.name.split('|')[-1] }}</span><span class="r">{{ eur(r.cost_per_qualified) }}</span><span class="s">{{ 'Google' if r.platform == 'google' else 'Meta' }} · {{ r.funnel }} · {{ r.leads }} lead, {{ r.qualified }} in trattativa</span></div>{% endfor %}
+  </div>
+  <div class="list"><div class="group"><span>Le peggiori</span></div>
+    {% for r in p.worst %}<div class="row" style="cursor:default"><span class="sev critico"></span><span class="t">{{ r.name.split('|')[-1] }}</span><span class="r">{{ eur(r.cost_per_qualified) }}</span><span class="s">{{ 'Google' if r.platform == 'google' else 'Meta' }} · {{ r.funnel }} · {{ r.leads }} lead, {{ r.qualified }} in trattativa</span></div>{% endfor %}
+  </div>
+</div>
+{% if p.crm %}
+<div class="tiles">
+  {% for c in p.crm %}
+  <div class="tile static"><span>{{ c.account.name }} · lead diventati contratti</span><b>{{ '%.1f%%' % c.contracts_pct }}</b><span class="subtle">{{ c.leads }} lead dal {{ c['from'].strftime('%d/%m') }} al {{ c['to'].strftime('%d/%m') }}; {{ '%.0f%%' % c.qualified_pct }} in trattativa o oltre</span></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h2 class="section-title">Segnali alla piattaforma</h2>
+<div class="card tablewrap"><table>
+  <thead><tr><th>Account</th><th>Su cosa ottimizza</th><th>Qualità dal CRM alla piattaforma</th></tr></thead>
+  <tbody>{% for t in p.tracking %}<tr><td>{{ t.account.name }}</td><td>{{ t.event }}</td>
+    <td>{% if t.crm_back and t.crm_days is not none and t.crm_days > 7 %}<span class="badge critico">ferma da {{ t.crm_days }} giorni</span> ultimo caricamento {{ t.crm_last.strftime('%d/%m') }}{% elif t.crm_back %}<span class="badge ok">attiva</span>{% else %}<span class="badge critico">non arriva</span>{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if p.verified %}<p class="muted">Tracciamento verificato da SearchOn il {{ p.verified }}.</p>{% endif %}
+
+<h2 class="section-title">KPI dello specialist</h2>
+{% if p.missing_kpi %}<p class="note">Mancano per: {{ p.missing_kpi | join(', ') }}. <a href="/c/{{ slug }}/kpi">Inseriscili</a></p>{% else %}<p class="muted">Tutti presenti.</p>{% endif %}
+
+<h2 class="section-title">Da non toccare oggi</h2>
+<div class="list">
+  {% for h in p.holds %}<div class="row" style="cursor:default"><span class="sev info"></span><span class="t">{{ h.what }}</span><span class="r">{{ ('fino al ' ~ h.until.strftime('%d/%m')) if h.until else 'in corso' }}</span><span class="s">{{ h.why }}</span></div>
+  {% else %}<p class="empty">Niente.</p>{% endfor %}
+</div>
+{% endblock %}

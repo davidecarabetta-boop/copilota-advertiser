@@ -253,7 +253,7 @@ proposte:
     stato: confermata 2026-11-22
     azione: null
     titolo: Aprire un ticket al team analytics
-    perche: "Problemi di dati (tracciamento, CRM, UTM) che l'advertiser non deve risolvere da solo."
+    perche: "Problemi di dati (tracciamento, caricamento dal CRM) che l'advertiser non deve risolvere da solo."
     proponi_se:
       - {id: problema_dati, testo: "Un controllo sui dati è rosso o giallo con una causa chiara"}
     non_proporre_se: []

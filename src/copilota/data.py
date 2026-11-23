@@ -96,6 +96,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "decided": _opt(date.fromisoformat), "applied": _opt(date.fromisoformat),
         "check_after_days": _opt(int), "until": _opt(date.fromisoformat),
         "baseline": str, "result": str, "note": str,
+        # pipeline di un brief: id del brief, ordine, passi da cui dipende (id separati da |),
+        # chi esegue (Claude | Advertiser | Specialist | Senior), da quando si può fare
+        "pipeline": str, "step": _opt(int), "depends": str, "executor": str,
+        "start": _opt(date.fromisoformat),
     },
     # KPI dello specialist per piattaforma e linea di business (es. meta / AUTO_B2C)
     "kpi": {
@@ -122,6 +126,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     },
 }
 
+# Colonne aggiunte dopo: se il CSV non le ha ancora, si leggono vuote.
+OPTIONAL_COLUMNS: dict[str, set[str]] = {
+    "change_log": {"pipeline", "step", "depends", "executor", "start"},
+}
+
 Row = dict[str, Any]
 
 
@@ -142,9 +151,11 @@ class CsvSource:
             with open(self.directory / f"{table}.csv", encoding="utf-8", newline="") as f:
                 reader = csv.DictReader(f)
                 missing = set(schema) - set(reader.fieldnames or [])
+                missing -= OPTIONAL_COLUMNS.get(table, set())
                 if missing:
                     raise ValueError(f"{table}.csv: colonne mancanti {sorted(missing)}")
-                self._cache[table] = [{k: cast(r[k]) for k, cast in schema.items()} for r in reader]
+                self._cache[table] = [{k: cast(r.get(k) or "") for k, cast in schema.items()}
+                                      for r in reader]
         return self._cache[table]
 
 

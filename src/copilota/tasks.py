@@ -255,14 +255,8 @@ def _campaign_tasks(camp: dict, account: dict, waiting: list[Waiting]) -> list[T
             non_fare="Non alzare il budget da solo.", button="Segnala allo specialist")
         tasks += _rule("volume_sotto_kpi", {"kpi_presenti": True, "sotto_volume": True},
                        task, waiting)
-    for utm, n in camp.get("utm_lost", []):
-        check = Check(account["account_id"], "Tracking", "UTM non abbinati", Status.YELLOW,
-                      f"Nel CRM ci sono {n} lead con utm_campaign «{utm}», che non corrisponde "
-                      "a nessuna campagna attiva nel periodo: non si sa quanto rende.")
-        tasks.append(_analytics_task(
-            check, f"Fai correggere l'UTM «{utm}»: {n} lead senza campagna",
-            "Se l'UTM non corrisponde al nome della campagna, il Copilota non può dire se "
-            "quella spesa porta clienti.", account, priority=3))
+    # Lead senza UTM (organico, diretto) o con l'UTM di una campagna chiusa o rinominata non
+    # sono un errore: si mostrano nella pagina Campagne come informazione, non come attività.
     return tasks
 
 

@@ -108,3 +108,11 @@ def test_no_new_creatives_in_campaign_with_learning_ad_sets():
     plan = build_plan(ACC, [], [div], camp)
     assert not any(t.rule == "nuove_creativita" for t in plan.tasks)
     assert any("apprendimento" in r for w in plan.waiting for r in w.reasons)
+
+
+def test_unmatched_utm_is_not_a_task():
+    # lead senza UTM o con l'UTM di una campagna chiusa/rinominata: informazione, non errore
+    camp = {"out": [], "within": [], "kpis": {("meta", "X"): {}},
+            "utm_lost": [("campagna-rinominata", 500)], "from": D, "to": D}
+    plan = build_plan(ACC, [], [], camp)
+    assert not any("UTM" in t.title for t in plan.tasks)

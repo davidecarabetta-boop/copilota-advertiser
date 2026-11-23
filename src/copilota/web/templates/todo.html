@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Da fare · {{ client }} · Copilota Advertiser{% endblock %}
+{% block body %}
+{% set st = board.stats %}
+{% set GROUP_TXT = {'mine': 'Tocca a te', 'decide': 'Da far decidere', 'hold': 'Non toccare', 'later': 'Dopo il blocco'} %}
+
+<header class="page-head">
+  <div>
+    <h1>Da fare</h1>
+    <p class="meta">Dati {{ dates or 'non ancora caricati' }} · {{ st.open }} attività aperte · {{ st.accounts }} account di {{ client }}{% if al %} · <b>stai guardando il {{ al }}</b> · <a href="/c/{{ slug }}">torna a oggi</a>{% endif %}</p>
+  </div>
+</header>
+
+<div data-board data-item="{{ item }}" style="display:grid;gap:18px;min-width:0">
+<div class="filters">
+  <label class="filter"><span>Account</span>
+    <select data-f-account>
+      <option value="">Tutti</option>
+      {% for x in board.accounts %}<option value="{{ x.a.account_id }}" {% if x.a.account_id == account %}selected{% endif %}>{{ x.a.name }} · {{ 'Google' if x.a.platform == 'google' else 'Meta' }}</option>{% endfor %}
+    </select>
+  </label>
+</div>
+
+{% if msg %}<p class="alertline" role="status"><span class="sev info"></span>{{ msg }}</p>{% endif %}
+{% for b in board.blocked %}
+<p class="alertline"><span class="sev critico"></span><span><b>{{ b.a.name }}</b> è bloccato: {{ b.headline | lower }} Finché non è risolto, l'unica cosa da fare è mandare il ticket.</span></p>
+{% endfor %}
+
+<div class="tiles" role="group" aria-label="Filtra le attività">
+  <button class="tile" type="button" data-tile="open" aria-pressed="true"><span>Aperte</span><b data-count="open">{{ st.open }}</b></button>
+  <button class="tile" type="button" data-tile="mine" aria-pressed="false"><span><span class="sev critico"></span>Tocca a te</span><b data-count="mine">{{ st.mine }}</b></button>
+  <button class="tile" type="button" data-tile="decide" aria-pressed="false"><span><span class="sev attenzione"></span>Da far decidere</span><b data-count="decide">{{ st.decide }}</b></button>
+  <button class="tile" type="button" data-tile="hold" aria-pressed="false"><span><span class="sev info"></span>In corso, non toccare</span><b data-count="hold">{{ st.hold }}</b></button>
+  <div class="tile static"><span>Account senza attività</span><b>{{ st.quiet }}<small> di {{ st.accounts }}</small></b></div>
+</div>
+
+<div class="board">
+  <div class="list" id="list">
+    {% for x in board.accounts %}{% set acc = x.a.account_id %}
+    <div class="group" data-group-account="{{ acc }}"><span>{{ x.a.name }} <span class="subtle">· {{ 'Google Ads' if x.a.platform == 'google' else 'Meta Ads' }}</span></span>
+      <span class="counts"><span><span class="sev critico"></span><span data-n="critico">0</span></span><span><span class="sev attenzione"></span><span data-n="attenzione">0</span></span><span><span class="sev info"></span><span data-n="info">0</span></span></span></div>
+      {% for i in board['items'] if i.a.account_id == acc %}
+      <button class="row" type="button" data-uid="{{ i.uid }}" data-group="{{ i.group }}" data-account="{{ acc }}" data-sev="{{ i.sev }}" aria-selected="false">
+        <span class="sev {{ i.sev }}"></span>
+        <span class="t">{{ i.obj.title if i.kind != 'hold' else i.obj.what }}</span>
+        <span class="r">{{ i.right }}</span>
+        <span class="s">{{ GROUP_TXT[i.group] }} · {{ i.sub }}</span>
+      </button>
+      {% endfor %}
+    {% endfor %}
+    <p class="empty" data-empty hidden>Niente in questa vista.</p>
+  </div>
+
+  <div class="detail" id="detail" aria-live="polite">
+    {% for i in board['items'] %}
+    {% set crumb = client ~ ' › ' ~ ('Google Ads' if i.a.platform == 'google' else 'Meta Ads') ~ ' › ' ~ i.a.name %}
+    <article data-panel="{{ i.uid }}" hidden style="display:grid;gap:16px">
+      {% if i.kind == 'task' %}
+        {{ m.task_detail(i.obj, i.uid, crumb, i.sev, '/c/' ~ slug ~ '/campagne?account=' ~ i.a.account_id) }}
+      {% elif i.kind == 'entry' %}
+        {{ m.entry_detail(i.obj, client ~ ' › ' ~ ('Google Ads' if i.a.platform == 'google' else 'Meta Ads') ~ ' › ' ~ i.obj.campaign_name, i.sev, al) }}
+      {% else %}
+        <div class="top"><span class="badge">Non toccare</span>{% if i.obj.until %}<span>fino al {{ i.obj.until.strftime('%d/%m/%Y') }}</span>{% endif %}</div>
+        <h2>{{ i.obj.what }}</h2>
+        <p class="crumb">{{ crumb }}</p>
+        {% if i.obj.why %}<div class="sec"><h3>Perché</h3><p>{{ i.obj.why }}</p></div>{% endif %}
+        <div class="sec dont"><h3>Non fare</h3><p>Niente modifiche a budget, offerte, creatività o struttura{% if i.obj.until %} fino al {{ i.obj.until.strftime('%d/%m') }}{% endif %}.</p></div>
+      {% endif %}
+    </article>
+    {% endfor %}
+    <p class="muted" data-nodetail hidden>Scegli una voce dall'elenco.</p>
+  </div>
+</div>
+</div>
+{% endblock %}
+

@@ -18,7 +18,8 @@ AZIONI = {  # azione -> (stato di partenza ammessi, stato di arrivo)
     "approva": ({"proposta"}, "approvata"),
     "scarta": ({"proposta", "approvata"}, "scartata"),
     "applicata": ({"approvata"}, "applicata"),
-    "verificata": ({"applicata"}, "verificata"),
+    "fatta": ({"proposta"}, "applicata"),  # proposte che l'advertiser decide e fa da solo
+    "verificata": ({"applicata", "proposta"}, "verificata"),  # da proposta: solo i controlli
 }
 
 
@@ -55,7 +56,21 @@ def due(entries: list[Row], today: date) -> list[Row]:
 def dont_touch(entries: list[Row], today: date) -> list[Row]:
     return [e for e in entries if e["kind"] == "da_non_toccare"
             and e["status"] not in ("scartata", "verificata")
-            and (e["until"] is None or e["until"] >= today)]
+            and (e["until"] is None or e["until"] >= today)
+            and (e.get("start") is None or e["start"] <= today)]
+
+
+def is_done(e: Row) -> bool:
+    """Un passo è fatto se è applicato o verificato; una decisione, quando è presa."""
+    return e["status"] in ("applicata", "verificata") or (
+        e["status"] == "approvata" and e["kind"] == "decisione")
+
+
+def blockers(e: Row, entries: list[Row]) -> list[Row]:
+    """I passi da cui dipende e che non sono ancora fatti (gli scartati bloccano)."""
+    by_id = {x["id"]: x for x in entries}
+    deps = [by_id[d] for d in (e.get("depends") or "").split("|") if d in by_id]
+    return [d for d in deps if not is_done(d)]
 
 
 def apply_action(folder: Path, entry_id: str, action: str, today: date, note: str = "",
@@ -66,12 +81,13 @@ def apply_action(folder: Path, entry_id: str, action: str, today: date, note: st
     if e is None:
         raise ValueError("Voce non trovata nel registro")
     allowed, target = AZIONI[action]
-    if e["status"] not in allowed:
+    if e["status"] not in allowed or (action == "verificata" and e["status"] == "proposta"
+                                      and e["kind"] != "verifica"):
         raise ValueError(f"Da «{STATO_LABEL[e['status']]}» non si può fare «{action}»")
     e["status"] = target
-    if action in ("approva", "scarta"):
+    if action in ("approva", "scarta", "fatta"):
         e["decided"] = today
-    if action == "applicata":
+    if action in ("applicata", "fatta"):
         e["applied"] = today
     if note:
         e["note"] = (e["note"] + " | " if e["note"] else "") + f"{today:%d/%m}: {note}"

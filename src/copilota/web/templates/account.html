@@ -1,290 +1,121 @@
 {% extends "base.html" %}
-{% block title %}{{ account.name }} · Copilota Advertiser{% endblock %}
+{% import "_macros.html" as m with context %}
+{% set TITLES = {'campagne': 'Campagne', 'creativita': 'Creatività', 'dati': 'Dati e controlli'} %}
+{% block title %}{{ TITLES[tab] }} · {{ account.name }} · Copilota Advertiser{% endblock %}
 {% block body %}
-{% set base = '/a/' ~ slug ~ '/' ~ account.account_id %}
-{% set q = ('&al=' ~ al) if al else '' %}
+{% set eur = m.eur %}
 
-{% if msg %}<div class="banner ok" role="status">{{ msg }}</div>{% endif %}
-
-<section class="card">
-  <div class="head">
-    <h2>{{ account.name }}</h2>
-    <span class="muted">{{ 'Google Ads' if account.platform == 'google' else 'Meta Ads' }} · {{ client }}</span>
+<header class="page-head">
+  <div>
+    <h1>{{ TITLES[tab] }}</h1>
+    <p class="meta">{{ account.name }} · {{ 'Google Ads' if account.platform == 'google' else 'Meta Ads' }} · Dati {{ dates or 'non ancora caricati' }}{% if al %} · <b>stai guardando il {{ al }}</b> · <a href="?account={{ account.account_id }}">torna a oggi</a>{% endif %}</p>
   </div>
+</header>
+
+<form class="filters" method="get">
+  <label class="filter"><span>Account</span>
+    <select name="account" onchange="this.form.submit()">
+      {% for a in accounts %}<option value="{{ a.account_id }}" {% if a.account_id == account.account_id %}selected{% endif %}>{{ a.name }} · {{ 'Google' if a.platform == 'google' else 'Meta' }}</option>{% endfor %}
+    </select>
+  </label>
+  {% if al %}<input type="hidden" name="al" value="{{ al }}">{% endif %}
+  <noscript><button class="btn" type="submit">Mostra</button></noscript>
+</form>
+
+{% if msg %}<p class="alertline" role="status"><span class="sev info"></span>{{ msg }}</p>{% endif %}
+
+{# ---------- Campagne ---------- #}
+{% if tab == 'campagne' %}
   {% if kpi %}
-  <div class="kpis">
-    <div class="kpi"><span>Spesa 30 giorni</span><b>{{ '{:,.0f}'.format(kpi.spend).replace(',', '.') }} €</b></div>
-    <div class="kpi"><span>{{ 'Conversioni' if account.platform == 'google' else 'Lead' }} 30 giorni</span><b>{{ '{:,.0f}'.format(kpi.leads).replace(',', '.') }}</b></div>
-    <div class="kpi"><span>Costo per {{ 'conversione' if account.platform == 'google' else 'lead' }}</span><b>{{ '%.0f €' % kpi.cpl if kpi.cpl else '—' }}</b></div>
-    <div class="kpi"><span>Lead diventati contratti</span>
-      {% if kpi.quality %}<b>{{ '%.1f%%' % kpi.quality.contracts_pct }}</b><small>lead dal {{ kpi.quality['from'].strftime('%d/%m') }} al {{ kpi.quality['to'].strftime('%d/%m') }} (CRM); {{ '%.0f%%' % kpi.quality.qualified_pct }} ancora in trattativa</small>
-      {% else %}<b>?</b><small><a href="/c/{{ slug }}/crm">carica l'export CRM per saperlo</a></small>{% endif %}</div>
+  <div class="tiles">
+    <div class="tile static"><span>Spesa 30 giorni</span><b>{{ eur(kpi.spend) }}</b></div>
+    <div class="tile static"><span>{{ 'Conversioni' if account.platform == 'google' else 'Lead' }} 30 giorni</span><b>{{ '{:,.0f}'.format(kpi.leads).replace(',', '.') }}</b></div>
+    <div class="tile static"><span>Costo per {{ 'conversione' if account.platform == 'google' else 'lead' }}</span><b>{{ eur(kpi.cpl) if kpi.cpl else '—' }}</b></div>
+    <div class="tile static"><span>Lead diventati contratti</span>{% if kpi.quality %}<b>{{ '%.1f%%' % kpi.quality.contracts_pct }}</b><span class="subtle">lead dal {{ kpi.quality['from'].strftime('%d/%m') }} al {{ kpi.quality['to'].strftime('%d/%m') }}, dal CRM</span>{% else %}<b>?</b><a class="subtle" href="/c/{{ slug }}/crm">carica l'export CRM</a>{% endif %}</div>
   </div>
   {% endif %}
-  <p class="muted">Dati fino al {{ updated.strftime('%d/%m/%Y') if updated else '—' }}{% if al %} · <b>stai guardando il passato</b> · <a href="{{ base }}?tab={{ tab }}">torna a oggi</a>{% endif %}</p>
-</section>
 
-<nav class="tabs" aria-label="Sezioni">
-  <a href="{{ base }}?tab=oggi{{ q }}" {% if tab == 'oggi' %}aria-current="page"{% endif %}>Cosa fare oggi <span class="count">{{ plan.tasks | length }}</span></a>
-  {% if selection.available %}<a href="{{ base }}?tab=guardare{{ q }}" {% if tab == 'guardare' %}aria-current="page"{% endif %}>Campagne da guardare <span class="count">{{ selection.below | length + selection.scale | length }}</span></a>{% endif %}
-  {% if register['items'] %}<a href="{{ base }}?tab=registro{{ q }}" {% if tab == 'registro' %}aria-current="page"{% endif %}>Registro {% if register.open %}<span class="count">{{ register.open }}</span>{% endif %}</a>{% endif %}
-  {% if campaigns %}<a href="{{ base }}?tab=campagne{{ q }}" {% if tab == 'campagne' %}aria-current="page"{% endif %}>Qualità dal CRM</a>{% endif %}
-  <a href="{{ base }}?tab=dati{{ q }}" {% if tab == 'dati' %}aria-current="page"{% endif %}>Dati da inserire {% if plan.missing %}<span class="count">{{ plan.missing | length }}</span>{% endif %}</a>
-  <a href="{{ base }}?tab=segnali{{ q }}" {% if tab == 'segnali' %}aria-current="page"{% endif %}>Controlli</a>
-  {% if account.platform == 'meta' %}<a href="{{ base }}?tab=creativita{{ q }}" {% if tab == 'creativita' %}aria-current="page"{% endif %}>Creatività</a>{% endif %}
-</nav>
-
-{% if tab == 'oggi' %}
-  {% if plan.blocked %}
-  <div class="banner bad"><b>{{ plan.headline }}</b>
-    <p>Su questo account oggi c'è una sola cosa da fare: aprire il ticket qui sotto. Le altre attività compaiono quando il problema è risolto.</p></div>
-  {% elif plan.tasks %}
-  <div class="banner info"><b>{{ plan.headline }}</b><p>Sono in ordine di importanza: parti dalla prima.</p></div>
-  {% else %}
-  <div class="banner ok"><b>{{ plan.headline }}</b></div>
-  {% endif %}
-
-  {% for t in plan.tasks %}
-  <article class="card task p{{ t.priority }}">
-    <div class="meta">
-      <span class="tag">{{ t.module }}</span>
-      <span class="tag level-{{ t.level }}">{{ t.level_label }}</span>
-      <span class="muted">{{ loop.index }} di {{ plan.tasks | length }}</span>
-    </div>
-    <h3>{{ t.title }}</h3>
-    <div class="parts">
-      <div class="part"><h4>Cosa succede</h4><p>{{ t.cosa }}</p></div>
-      <div class="part"><h4>Perché conta</h4><p>{{ t.perche }}</p></div>
-      <div class="part"><h4>Come fare</h4><ol>{% for s in t.come %}<li>{{ s }}</li>{% endfor %}</ol></div>
-      <div class="part dont"><h4>Non fare</h4><p>{{ t.non_fare }}</p></div>
-    </div>
-    {% if t.link %}
-    <div><a class="btn primary" href="{{ t.link[1] }}" target="_blank" rel="noopener">{{ t.link[0] }} ↗</a></div>
-    {% endif %}
-    {% if t.ticket %}
-    <div class="ticket">
-      <label for="ticket-{{ loop.index }}">Testo del ticket, pronto da mandare</label>
-      <textarea id="ticket-{{ loop.index }}" rows="8" readonly>{{ t.ticket }}</textarea>
-      <div><button class="btn primary" type="button" data-copy="ticket-{{ loop.index }}">Copia il testo</button></div>
-    </div>
-    {% elif t.level == 'serve_senior' %}
-    <p class="muted">Questa decisione spetta al senior: mostragli questa scheda.</p>
-    {% endif %}
-    {% if t.verifica %}<p class="muted"><b>Verifica:</b> {{ t.verifica }}</p>{% endif %}
-    {% if t.conditions %}
-    <details><summary>Perché te lo propongo: le condizioni della regola</summary>
-      <ul class="conds">{% for c in t.conditions %}
-        {% if not c.exclusion %}
-        <li class="{{ {True:'ok', False:'no', None:'unk'}[c.state] }}">{{ {True:'✓', False:'✗', None:'?'}[c.state] }} {{ c.text }}{% if c.state is none %} <span class="muted">(non verificabile con i dati, controlla tu)</span>{% endif %}</li>
-        {% else %}
-        <li class="{{ {True:'no', False:'ok', None:'unk'}[c.state] }}">{{ {True:'✗', False:'✓', None:'?'}[c.state] }} Non deve succedere che: {{ c.text | lower }}{% if c.state is none %} <span class="muted">(non verificabile con i dati, controlla tu)</span>{% endif %}</li>
-        {% endif %}
-      {% endfor %}</ul>
-      {% if t.rule %}<p class="muted">Regola «{{ t.rule }}» in <a href="/regole#{{ t.rule }}">Regole</a>.</p>{% endif %}
-    </details>
-    {% endif %}
-  </article>
-  {% endfor %}
-
-  {% if plan.waiting %}
-  <section class="card">
-    <h3>In attesa: non si fanno ancora</h3>
-    <p class="muted">Il Copilota le ha valutate ma le regole non le permettono oggi. Non farle.</p>
-    <ul class="plain">{% for w in plan.waiting %}
-      <li><b>{{ w.title }}</b><ul class="steps">{% for r in w.reasons %}<li class="muted">{{ r | replace('non vale: ', 'Manca: ') | replace('vale: ', 'Lo impedisce: ') }}</li>{% endfor %}</ul></li>
-    {% endfor %}</ul>
-  </section>
-  {% endif %}
-
-  {% if plan.missing %}
-  <section class="card">
-    <h3>Per un giudizio completo mancano dei dati</h3>
-    <p class="muted">Non blocca le attività qui sopra, ma senza questi dati il Copilota vede solo una parte del quadro.</p>
-    <ul class="plain">{% for m in plan.missing %}
-      <li class="missing"><b>{{ m.title }}</b><a class="btn" href="/c/{{ slug }}/{{ m.page }}">Inserisci</a><p class="muted">{{ m.why }}</p></li>
-    {% endfor %}</ul>
-  </section>
-  {% endif %}
-
-  {% if plan.dont_touch %}
-  <section class="card"><h3>Da non toccare</h3>
-    <ul class="steps">{% for d in plan.dont_touch %}<li>{{ d }}</li>{% endfor %}</ul></section>
-  {% endif %}
-
-  <details class="card"><summary>Come si usa il Copilota</summary>
-    <ol class="steps">
-      <li>Scegli l'account a sinistra. Il pallino dice subito com'è: <b>Bloccato</b>, <b>N da fare</b> o <b>Tutto ok</b>.</li>
-      <li>In <b>Cosa fare oggi</b> trovi le attività in ordine. Ognuna dice cosa succede, perché, come fare e cosa non fare.</li>
-      <li><b>Puoi farlo</b>: la fai tu. <b>Serve il senior</b>: mostri la scheda al senior prima di toccare qualcosa.</li>
-      <li>Se l'account è <b>Bloccato</b>, copi il ticket e lo mandi al team analytics. Nient'altro finché non è risolto.</li>
-      <li>In <b>Dati da inserire</b> carichi quello che le piattaforme non sanno: l'export del CRM, i concept creativi, lo stato del tracciamento.</li>
-    </ol>
-  </details>
-
-{% elif tab == 'registro' %}
-  {% set ACT = {'approva': 'Approva', 'scarta': 'Scarta', 'applicata': 'Segna come applicata', 'verificata': 'Chiudi la verifica'} %}
-  {% set KIND = {'modifica': 'Modifica', 'da_non_toccare': 'Da non toccare', 'verifica': 'Controllo'} %}
-  <div class="banner info"><b>Registro delle proposte</b>
-    <p>Ogni proposta passa da qui: chi decide la approva o la scarta, chi la esegue la segna come applicata, alla data di verifica si confrontano i numeri con quelli di partenza. Il Copilota non modifica le campagne.</p></div>
-  {% for e in register['items'] %}
-  <article class="card task {{ 'p1' if e.is_due or e.status == 'proposta' else 'p3' }}">
-    <div class="meta">
-      <span class="tag">{{ KIND.get(e.kind, e.kind) }}</span>
-      <span class="tag">Decide: {{ e.decides }}</span>
-      <span class="tag {{ 'level-serve_senior' if e.is_due else '' }}">{{ 'Da verificare oggi' if e.is_due else e.label }}</span>
-      <span class="muted">{{ e.id }} · {{ e.campaign_name }}</span>
-    </div>
-    <h3>{{ e.title }}</h3>
-    <div class="parts">
-      <div class="part"><h4>Perché</h4><p>{{ e.why }}</p></div>
-      <div class="part"><h4>Cosa ci aspettiamo</h4><p>{{ e.expected }}</p></div>
-    </div>
-    <p class="muted">
-      Proposta il {{ e.created.strftime('%d/%m') }}{% if e.decided %} · decisa il {{ e.decided.strftime('%d/%m') }}{% endif %}{% if e.applied %} · applicata il {{ e.applied.strftime('%d/%m') }}{% endif %}{% if e.until %} · blocco fino al {{ e.until.strftime('%d/%m') }}{% endif %}{% if e.check %} · verifica dal {{ e.check.strftime('%d/%m') }}{% elif e.check_after_days %} · verifica {{ e.check_after_days }} giorni dopo l'applicazione{% endif %}
-    </p>
-    {% if e.baseline_rows %}
-    <details><summary>Numeri di partenza</summary>
-      <table><thead><tr><th>Periodo</th><th>Spesa</th><th>Conversioni</th><th>CPA</th><th>CPA target</th><th>Budget/giorno</th><th>Persa per budget</th><th>Persa per ranking</th></tr></thead><tbody>
-      {% for b in e.baseline_rows %}<tr><td>{{ b.date_from }} → {{ b.date_to }}</td><td>{{ '%.0f €' % b.spend }}</td><td>{{ '%.0f' % b.conversions }}</td><td>{{ '%.2f €' % b.cpa if b.cpa else '—' }}</td><td>{{ '%.0f €' % b.target_cpa if b.target_cpa else '—' }}</td><td>{{ '%.0f €' % b.budget_daily if b.budget_daily else '—' }}</td><td>{{ '%.0f%%' % b.lost_is_budget_pct if b.lost_is_budget_pct is not none else '—' }}</td><td>{{ '%.0f%%' % b.lost_is_rank_pct if b.lost_is_rank_pct is not none else '—' }}</td></tr>{% endfor %}
-      </tbody></table></details>
-    {% endif %}
-    {% if e.result %}<p><b>Risultato:</b> {{ e.result }}</p>{% endif %}
-    {% if e.note %}<p class="muted"><b>Note:</b> {{ e.note }}</p>{% endif %}
-    {% if e.actions and not al %}
-    <form method="post" action="{{ base }}/registro/{{ e.id }}" class="reg-form">
-      <label>Nota <input name="note" placeholder="facoltativa: chi, cosa, dove"></label>
-      {% if 'verificata' in e.actions %}<label>Risultato <input name="result" placeholder="es. CPA da 23,8 a 20,1 €" required></label>{% endif %}
-      <div>{% for a in e.actions %}<button class="btn {{ 'primary' if loop.first else '' }}" name="action" value="{{ a }}">{{ ACT[a] }}</button> {% endfor %}</div>
-    </form>
-    {% endif %}
-  </article>
-  {% endfor %}
-
-{% elif tab == 'dati' %}
-  <section class="card">
-    <h3>Dati da inserire a mano</h3>
-    <p class="muted">Sono le informazioni che Google e Meta non danno. Valgono per tutto il cliente {{ client }}.</p>
-    <ul class="plain">
-      <li class="missing"><b>KPI dello specialist</b><a class="btn {{ 'primary' if plan.missing | selectattr('page','equalto','kpi') | list else '' }}" href="/c/{{ slug }}/kpi">Apri</a>
-        <p class="muted">Costo per lead, per lead qualificato, per contratto, lead al mese e budget, per piattaforma e linea. Senza, il Copilota non dice se una campagna va bene o male.</p></li>
-      <li class="missing"><b>Export CRM</b><a class="btn {{ 'primary' if plan.missing | selectattr('page','equalto','crm') | list else '' }}" href="/c/{{ slug }}/crm">Apri</a>
-        <p class="muted">Quanti lead arrivano, quanti diventano qualificati e contratti. Serve per sapere se l'account porta clienti.</p></li>
-      {% if account.platform == 'meta' %}
-      <li class="missing"><b>Concept creativi</b><a class="btn {{ 'primary' if plan.missing | selectattr('page','equalto','concetti') | list else '' }}" href="/c/{{ slug }}/concetti">Apri</a>
-        <p class="muted">Quale idea e quale messaggio c'è dietro ogni annuncio. Serve per giudicare la varietà delle creatività.</p></li>
-      {% endif %}
-      <li class="missing"><b>Stato del tracciamento</b><a class="btn {{ 'primary' if plan.missing | selectattr('page','equalto','tracciamento') | list else '' }}" href="/c/{{ slug }}/tracciamento">Apri</a>
-        <p class="muted">Consent Mode, Conversions API, ritorno dei lead dal CRM: cose che sa il team analytics.</p></li>
-    </ul>
-  </section>
-
-{% elif tab == 'guardare' and selection.available %}
-  {% macro eur(v) %}{{ '{:,.0f} €'.format(v).replace(',', '.') if v is not none else '—' }}{% endmacro %}
   {% macro diag(c, key) %}
-    <details><summary>Diagnosi: {{ c.diagnosis | selectattr('state','equalto','problema') | list | length }} problemi, {{ c.diagnosis | selectattr('state','equalto','attenzione') | list | length }} da guardare, {{ c.diagnosis | selectattr('state','equalto','da fare con Claude') | list | length }} da fare con Claude</summary>
-      <ul class="plain" style="margin-top:8px">{% for f in c.diagnosis %}
-        <li><span class="pill {{ {'ok':'ok','attenzione':'warn','problema':'bad'}.get(f.state, 'neutral') }}">{{ f.state }}</span> <b>{{ f.text }}</b>{% if not f.base %} <span class="muted">(se serve)</span>{% endif %}
+    <details><summary>Cosa controllare su questa campagna</summary>
+      <ul class="plain" style="margin-top:10px">{% for f in c.diagnosis %}
+        <li><span class="pill {{ {'ok':'ok','attenzione':'warn','problema':'bad'}.get(f.state, '') }}">{{ f.state }}</span> <b>{{ f.text }}</b>{% if not f.base %} <span class="muted">(se serve)</span>{% endif %}
           {% if f.detail %}<p class="muted">{{ f.detail }}</p>{% endif %}
           {% if f.ask %}<div class="ticket"><textarea id="ask-{{ key }}-{{ loop.index }}" rows="2" readonly>Campagna «{{ c.campaign_name }}» ({{ 'Google Ads ' if c.platform == 'google' else 'Meta ' }}{{ c.account_id }}, id {{ c.campaign_id }}). {{ f.ask }}</textarea>
             <div><button class="btn" type="button" data-copy="ask-{{ key }}-{{ loop.index }}">Copia la richiesta per Claude</button></div></div>{% endif %}
         </li>{% endfor %}</ul>
     </details>
   {% endmacro %}
-  <section class="card">
-    <h3>Le campagne da guardare oggi</h3>
-    <p class="muted">Fotografia del {{ selection.period[0].strftime('%d/%m') }}–{{ selection.period[1].strftime('%d/%m/%Y') }}: gli ultimi 7 giorni sono esclusi perché le conversioni non sono ancora consolidate. Si guardano solo queste campagne; le altre sono in target o non cercano conversioni.</p>
-  </section>
 
-  <section class="card">
-    <h3>Sotto target · in ordine di impatto</h3>
+  {% if selection.available %}
+  <h2 class="section-title">Rispetto al target</h2>
+  <p class="muted">Dal {{ selection.period[0].strftime('%d/%m') }} al {{ selection.period[1].strftime('%d/%m') }}. Gli ultimi 7 giorni sono esclusi: le conversioni non sono ancora complete.</p>
+  <div class="list">
+    <div class="group"><span>Sotto target</span><span class="counts"><span><span class="sev critico"></span>{{ selection.below | length }}</span></span></div>
     {% for c in selection.below %}
-    <article class="card task p1">
-      <div class="meta"><span class="tag">{{ c.line }} · {{ c.funnel }}</span><span class="tag">{{ c.campaign_type | replace('_',' ') | lower }}</span></div>
-      <h3>{{ c.campaign_name }}</h3>
-      <p>CPA <b>{{ eur(c.cpa) }}</b> contro un target di <b>{{ eur(c.target) }}</b> ({{ c.target_origin }}): {{ '%+.0f' % c.deviation_pct }}%. Nel periodo ha speso <b>{{ eur(c.impact) }}</b> in più di quanto sarebbe costato stare in target.</p>
+    <div class="card" style="border:0;border-top:1px solid var(--line);border-radius:0">
+      <div style="display:flex;gap:12px;align-items:baseline"><span class="sev critico"></span><b>{{ c.campaign_name }}</b></div>
+      <p>Costo per conversione <b>{{ eur(c.cpa) }}</b> contro un target di <b>{{ eur(c.target) }}</b> ({{ c.target_origin }}): {{ '%+.0f' % c.deviation_pct }}%. Rispetto al target ha speso {{ eur(c.impact) }} in più. <span class="subtle">{{ c.line }} · {{ c.funnel }} · {{ c.campaign_type | replace('_',' ') | lower }}</span></p>
       {{ diag(c, 'b' ~ loop.index) }}
-    </article>
-    {% else %}<p class="muted">Nessuna campagna con target è sotto target.</p>{% endfor %}
-  </section>
-
-  <section class="card">
-    <h3>Da scalare · in target ma frenate dal budget</h3>
+    </div>
+    {% else %}<p class="empty">Nessuna campagna sotto target.</p>{% endfor %}
+    <div class="group"><span>In target ma frenate dal budget</span><span class="counts"><span><span class="sev attenzione"></span>{{ selection.scale | length }}</span></span></div>
     {% for c in selection.scale %}
-    <article class="card task p2">
-      <div class="meta"><span class="tag">{{ c.line }} · {{ c.funnel }}</span><span class="tag level-decide_specialist">Decide lo specialist</span></div>
-      <h3>{{ c.campaign_name }}</h3>
-      <p>CPA {{ eur(c.cpa) }} contro un target di {{ eur(c.target) }}, ma perde il {{ '%.0f' % (c.lost_is_budget_pct or 0) }}% delle impressioni per budget{% if c.bid_status == 'LIMITED_BY_BUDGET' %} e Google la segnala "limitata dal budget"{% endif %}.</p>
-      <p><b>Effetto atteso</b> con +{{ c.budget_step_pct }}% di budget (il massimo per volta): circa <b>+{{ '%.0f' % c.extra_conv }} conversioni</b> nel mese per circa {{ eur(c.extra_spend) }} in più, se il costo resta in target.</p>
+    <div class="card" style="border:0;border-top:1px solid var(--line);border-radius:0">
+      <div style="display:flex;gap:12px;align-items:baseline"><span class="sev attenzione"></span><b>{{ c.campaign_name }}</b></div>
+      <p>Costo per conversione {{ eur(c.cpa) }} contro un target di {{ eur(c.target) }}, ma perde il {{ '%.0f' % (c.lost_is_budget_pct or 0) }}% delle impressioni per budget. Con +{{ c.budget_step_pct }}% di budget: circa +{{ '%.0f' % c.extra_conv }} conversioni al mese per {{ eur(c.extra_spend) }} in più. <span class="subtle">Il budget lo decide lo specialist.</span></p>
       {{ diag(c, 's' ~ loop.index) }}
-    </article>
-    {% else %}<p class="muted">Nessuna campagna in target è frenata dal budget.</p>{% endfor %}
-  </section>
-
+    </div>
+    {% else %}<p class="empty">Nessuna campagna in target è frenata dal budget.</p>{% endfor %}
+  </div>
   {% if selection.no_target %}
-  <section class="card">
-    <h3>Senza target · {{ selection.no_target | length }} campagne</h3>
-    <p>Queste campagne cercano conversioni ma non hanno un target: il Copilota non può dire se vanno bene. Il target arriva da Ads Guardian o lo inserisce lo specialist nei <a href="/c/{{ slug }}/kpi">KPI</a>.</p>
+  <details class="card"><summary>Senza target · {{ selection.no_target | length }} campagne: non si possono giudicare</summary>
+    <p class="muted">Il target arriva da Ads Guardian o lo inserisce lo specialist nei <a href="/c/{{ slug }}/kpi">KPI</a>.</p>
     <div class="tablewrap"><table>
       <thead><tr><th>Campagna</th><th class="num">Spesa</th><th class="num">Conversioni</th><th class="num">CPA</th><th class="num">Persa per budget</th></tr></thead>
       <tbody>{% for c in selection.no_target %}<tr><td>{{ c.campaign_name }}</td><td class="num">{{ eur(c.spend) }}</td><td class="num">{{ '%.0f' % c.conversions }}</td><td class="num">{{ eur(c.cpa) }}</td><td class="num">{{ ('%.0f%%' % c.lost_is_budget_pct) if c.lost_is_budget_pct is not none else '—' }}</td></tr>{% endfor %}</tbody>
     </table></div>
-  </section>
+  </details>
+  {% endif %}
   {% endif %}
 
-{% elif tab == 'campagne' and campaigns %}
+  {% if campaigns %}
   {% set out_ids = camp.out | map(attribute='campaign_id') | list %}
-  {% macro eur(v) %}{{ '{:,.0f} €'.format(v).replace(',', '.') if v else '—' }}{% endmacro %}
-  <section class="card">
-    <h3>Le campagne rispetto ai KPI dello specialist</h3>
-    <p class="muted">Lead arrivati dal {{ campaigns['from'].strftime('%d/%m/%Y') }} al {{ campaigns['to'].strftime('%d/%m/%Y') }}, secondo il CRM, e la spesa delle stesse campagne nello stesso periodo. Sono lead di almeno un mese: hanno avuto il tempo di essere lavorati.
-      {% if campaigns.lines %}Solo le linee {{ campaigns.lines | join(', ') }}: le altre non sono nell'export CRM.{% endif %}</p>
-    {% if camp.missing_kpi or not camp.kpis %}
-    <div class="banner warn"><b>Mancano i KPI dello specialist{% if camp.missing_kpi %} per {{ camp.missing_kpi | join(', ') }}{% endif %}.</b>
-      <p>Senza KPI il Copilota mostra i numeri ma non dice se una campagna va bene o male. <a href="/c/{{ slug }}/kpi">Inserisci i KPI</a></p></div>
-    {% endif %}
-    <div class="tablewrap"><table>
-      <thead><tr><th>Campagna</th><th class="num">Spesa</th><th class="num">Lead CRM</th><th class="num">Qualificati</th><th class="num">Contratti</th><th class="num">€ per lead</th><th class="num">€ per qualificato</th><th class="num">€ per contratto</th></tr></thead>
-      <tbody>{% for r in campaigns.rows if r.leads %}<tr>
-        <td>{{ r.name }}
-          {% if r.campaign_id in out_ids %}<span class="pill bad">fuori KPI</span>{% elif r.kpi and r.leads >= 30 %}<span class="pill ok">dentro i KPI</span>{% elif r.leads < 30 %}<span class="pill neutral">pochi lead per giudicare</span>{% elif not r.kpi %}<span class="pill neutral">senza KPI</span>{% endif %}</td>
-        <td class="num">{{ eur(r.spend) }}</td>
-        <td class="num">{{ r.leads }}</td><td class="num">{{ r.qualified }}</td><td class="num">{{ r.contracts }}</td>
-        <td class="num">{{ eur(r.cost_per_lead) }}{% if r.kpi and r.kpi.cost_per_lead %}<br><small class="muted">KPI {{ eur(r.kpi.cost_per_lead) }}</small>{% endif %}</td>
-        <td class="num">{{ eur(r.cost_per_qualified) }}{% if r.kpi and r.kpi.cost_per_qualified %}<br><small class="muted">KPI {{ eur(r.kpi.cost_per_qualified) }}</small>{% endif %}</td>
-        <td class="num">{{ eur(r.cost_per_contract) }}{% if r.kpi and r.kpi.cost_per_contract %}<br><small class="muted">KPI {{ eur(r.kpi.cost_per_contract) }}</small>{% endif %}</td>
-      </tr>{% endfor %}</tbody>
-    </table></div>
-    {% set no_leads = campaigns.rows | rejectattr('leads') | list %}
-    {% if no_leads %}
-    <details><summary>{{ no_leads | length }} campagne senza lead nel CRM ({{ '{:,.0f}'.format(no_leads | sum(attribute='spend')).replace(',', '.') }} € di spesa)</summary>
-      <p class="muted">Di solito traffico, interazione o video: non cercano lead, quindi qui non si giudicano.</p>
-      <ul class="steps">{% for r in no_leads %}<li>{{ r.name }}: {{ '{:,.0f}'.format(r.spend).replace(',', '.') }} €</li>{% endfor %}</ul></details>
-    {% endif %}
-    {% if campaigns.unmatched %}
-    <details><summary>{{ campaigns.unmatched | map(attribute=1) | sum }} lead con un UTM che non corrisponde a nessuna campagna del periodo</summary>
-      <ul class="steps">{% for u, n in campaigns.unmatched %}<li>{{ u }}: {{ n }} lead</li>{% endfor %}</ul></details>
-    {% endif %}
-  </section>
+  <h2 class="section-title">Qualità dei lead, dal CRM</h2>
+  <p class="muted">Lead arrivati dal {{ campaigns['from'].strftime('%d/%m') }} al {{ campaigns['to'].strftime('%d/%m/%Y') }}: hanno avuto almeno un mese per essere lavorati.{% if campaigns.lines %} Solo {{ campaigns.lines | join(', ') }}.{% endif %}</p>
+  {% if camp.missing_kpi or not camp.kpis %}
+  <p class="note">Senza i KPI dello specialist{% if camp.missing_kpi %} per {{ camp.missing_kpi | join(', ') }}{% endif %} qui vedi i numeri ma non se vanno bene. <a href="/c/{{ slug }}/kpi">Inserisci i KPI</a></p>
+  {% endif %}
+  <div class="card tablewrap"><table>
+    <thead><tr><th>Campagna</th><th class="num">Spesa</th><th class="num">Lead</th><th class="num">In trattativa o oltre</th><th class="num">Contratti</th><th class="num">€ per lead</th><th class="num">€ per lead in trattativa</th><th class="num">€ per contratto</th></tr></thead>
+    <tbody>{% for r in campaigns.rows if r.leads %}<tr>
+      <td>{{ r.name }}
+        {% if r.campaign_id in out_ids %}<span class="badge critico">fuori KPI</span>{% elif r.kpi and r.leads >= 30 %}<span class="badge ok">dentro i KPI</span>{% elif r.leads < 30 %}<span class="badge">pochi lead</span>{% endif %}</td>
+      <td class="num">{{ eur(r.spend) }}</td>
+      <td class="num">{{ r.leads }}</td><td class="num">{{ r.qualified }}</td><td class="num">{{ r.contracts }}</td>
+      <td class="num">{{ eur(r.cost_per_lead) }}{% if r.kpi and r.kpi.cost_per_lead %}<br><small class="muted">KPI {{ eur(r.kpi.cost_per_lead) }}</small>{% endif %}</td>
+      <td class="num">{{ eur(r.cost_per_qualified) }}{% if r.kpi and r.kpi.cost_per_qualified %}<br><small class="muted">KPI {{ eur(r.kpi.cost_per_qualified) }}</small>{% endif %}</td>
+      <td class="num">{{ eur(r.cost_per_contract) }}{% if r.kpi and r.kpi.cost_per_contract %}<br><small class="muted">KPI {{ eur(r.kpi.cost_per_contract) }}</small>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% set no_leads = campaigns.rows | rejectattr('leads') | list %}
+  <details class="card"><summary>Cosa non è in questa tabella</summary>
+    <ul class="steps">
+      <li>I lead senza UTM (organico, diretto, passaparola): è normale che non ce l'abbiano e non sono un errore.</li>
+      {% if campaigns.unmatched %}<li>{{ campaigns.unmatched | map(attribute=1) | sum }} lead con l'UTM di una campagna che nel periodo non ha speso: di solito è stata chiusa o rinominata. Non sono un errore.
+        <ul>{% for u, n in campaigns.unmatched %}<li class="muted">{{ u }}: {{ n }} lead</li>{% endfor %}</ul></li>{% endif %}
+      {% if no_leads %}<li>{{ no_leads | length }} campagne senza lead nel CRM ({{ eur(no_leads | sum(attribute='spend')) }} di spesa): traffico, interazione o video, non cercano lead.
+        <ul>{% for r in no_leads %}<li class="muted">{{ r.name }}: {{ eur(r.spend) }}</li>{% endfor %}</ul></li>{% endif %}
+    </ul>
+  </details>
+  {% endif %}
 
-{% elif tab == 'segnali' %}
-  <section class="card">
-    <h3>Controlli sui dati</h3>
-    <p class="muted">Il dettaglio da cui nascono le attività: per il senior e per chi vuole capire il perché.</p>
-    <div class="tablewrap"><table>
-      <thead><tr><th>Esito</th><th>Controllo</th><th>Dettaglio</th></tr></thead>
-      <tbody>{% for c in checks_sorted %}<tr>
-        <td><span class="pill {{ {'rosso':'bad','giallo':'warn','verde':'ok'}[c.status.value] }}">{{ c.status.value }}</span></td>
-        <td>{{ c.name }}</td><td>{{ c.detail }}</td></tr>{% endfor %}</tbody>
-    </table></div>
-    <form method="get" style="display:flex;flex-wrap:wrap;gap:8px;align-items:end">
-      <input type="hidden" name="tab" value="{{ tab }}">
-      <label>Rivedi come era il giorno <input type="date" name="al" value="{{ al or '' }}"></label>
-      <button class="btn" type="submit">Mostra</button>
-    </form>
-  </section>
+  {% if not selection.available and not campaigns %}
+  <p class="card muted">Per questo account non ci sono ancora i dati per campagna.</p>
+  {% endif %}
 
+{# ---------- Creatività ---------- #}
 {% elif tab == 'creativita' %}
-  {% for m in maps %}{% set ev = m.evidence %}
+  {% for mp in maps %}{% set ev = mp.evidence %}
   <section class="card">
     <h3>{{ ev.campagna }}</h3>
     <p>{{ ev.concept_attivi }} concept attivi negli ultimi 7 giorni.
@@ -300,10 +131,55 @@
     <div class="tablewrap"><table>
       <thead><tr><th>Concept</th><th>Stato</th><th class="num">Quota della spesa, 7 giorni</th></tr></thead>
       <tbody>{% for c, s in ev.semaforo.items() %}<tr><td>{{ c }}</td>
-        <td><span class="pill {{ semaforo_class.get(s, 'neutral') }}">{{ s }}</span></td>
+        <td><span class="pill {{ semaforo_class.get(s, '') }}">{{ s }}</span></td>
         <td class="num">{{ '%.0f%%' % ev.quota_spesa_7g_pct[c] if c in ev.quota_spesa_7g_pct else '—' }}</td></tr>{% endfor %}</tbody>
     </table></div>
   </section>
   {% else %}<section class="card"><p class="muted">Nessuna campagna a conversione con creatività.</p></section>{% endfor %}
+
+{# ---------- Dati e controlli ---------- #}
+{% elif tab == 'dati' %}
+  {% set miss = plan.missing | map(attribute='page') | list %}
+  <h2 class="section-title">Dati da inserire a mano</h2>
+  <p class="muted">Quello che Google e Meta non sanno. Vale per tutto il cliente {{ client }}.</p>
+  <ul class="plain">
+    <li class="missing"><b>{% if 'kpi' in miss %}<span class="sev critico"></span> {% endif %}KPI dello specialist</b><a class="btn {{ 'primary' if 'kpi' in miss else '' }}" href="/c/{{ slug }}/kpi">Apri</a>
+      <p class="muted">Costo per lead, per lead qualificato, per contratto, lead al mese e budget, per piattaforma e linea. Senza, il Copilota non dice se una campagna va bene.</p></li>
+    <li class="missing"><b>{% if 'crm' in miss %}<span class="sev critico"></span> {% endif %}Export CRM</b><a class="btn {{ 'primary' if 'crm' in miss else '' }}" href="/c/{{ slug }}/crm">Apri</a>
+      <p class="muted">Quanti lead diventano qualificati e contratti.</p></li>
+    {% if account.platform == 'meta' %}
+    <li class="missing"><b>{% if 'concetti' in miss %}<span class="sev attenzione"></span> {% endif %}Concept creativi</b><a class="btn {{ 'primary' if 'concetti' in miss else '' }}" href="/c/{{ slug }}/concetti">Apri</a>
+      <p class="muted">Quale idea e quale messaggio c'è dietro ogni annuncio.</p></li>
+    {% endif %}
+    <li class="missing"><b>{% if 'tracciamento' in miss %}<span class="sev attenzione"></span> {% endif %}Stato del tracciamento</b><a class="btn {{ 'primary' if 'tracciamento' in miss else '' }}" href="/c/{{ slug }}/tracciamento">Apri</a>
+      <p class="muted">Consent Mode, Conversions API, ritorno dei lead dal CRM: lo sa il team analytics.</p></li>
+  </ul>
+
+  <h2 class="section-title">Controlli sui dati</h2>
+  <p class="muted">Da qui nascono le attività. Serve a capire il perché.</p>
+  <div class="card tablewrap"><table>
+    <thead><tr><th>Esito</th><th>Controllo</th><th>Dettaglio</th></tr></thead>
+    <tbody>{% for c in checks_sorted %}<tr>
+      <td><span class="badge {{ {'rosso':'critico','giallo':'attenzione','verde':'ok'}[c.status.value] }}">{{ c.status.value }}</span></td>
+      <td>{{ c.name }}</td><td>{{ c.detail }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <form method="get" class="form-row">
+    <input type="hidden" name="account" value="{{ account.account_id }}">
+    <label>Rivedi com'era il giorno <input type="date" name="al" value="{{ al or '' }}"></label>
+    <div class="buttons"><button class="btn" type="submit">Mostra</button></div>
+  </form>
+
+  {% if plan.waiting %}
+  <h2 class="section-title">Proposte che le regole oggi non permettono</h2>
+  <p class="muted">Il Copilota le ha valutate e le ha fermate. Non farle.</p>
+  <ul class="card plain">{% for w in plan.waiting %}
+    <li><b>{{ w.title }}</b><ul class="steps">{% for r in w.reasons %}<li class="muted">{{ r | replace('non vale: ', 'Manca: ') | replace('vale: ', 'Lo impedisce: ') }}</li>{% endfor %}</ul></li>
+  {% endfor %}</ul>
+  {% endif %}
+
+  {% if todo.closed %}
+  <h2 class="section-title">Proposte chiuse</h2>
+  <ul class="card plain">{% for e in todo.closed %}<li><b>{{ e.title }}</b> <span class="tag">{{ e.label }}</span>{% if e.result %}<p>{{ e.result }}</p>{% endif %}{% if e.note %}<p class="muted">{{ e.note }}</p>{% endif %}</li>{% endfor %}</ul>
+  {% endif %}
 {% endif %}
 {% endblock %}

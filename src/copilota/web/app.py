@@ -9,6 +9,7 @@ Sola lettura verso le piattaforme: scrive solo i CSV in data/<cliente>/.
 Avvio: .venv/Scripts/python -m uvicorn copilota.web.app:app --host 127.0.0.1 --port 8000
 """
 
+import re
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
@@ -19,7 +20,7 @@ from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from copilota import register
+from copilota import brief, profile, register
 from copilota.campaigns import campaign_quality, judge, read_kpis, volume_check
 from copilota.config import CONFIG_DIR, load_thresholds
 from copilota.creative import analyze_account
@@ -122,16 +123,9 @@ def evaluate(source, account: dict, as_of: date | None) -> dict:
                 "blocked_ids": blocked_ids if status else None,
                 "volume": volume_check(source, account, th, kpis)}
     plan = build_plan(account, checks, findings, camp)
-    for s in status:  # oggetti in test o apprendimento: da non toccare
-        if s["learning"] or s["in_test"]:
-            why = "in un test" if s["in_test"] else "in apprendimento"
-            until = f" fino al {s['until']:%d/%m}" if s["until"] else ""
-            plan.dont_touch.append(f"«{s['object_name']}»: {why}{until}. {s['note']}".strip())
     today = as_of or date.today()
-    log = [e for e in _safe(source, "change_log") if e["account_id"] == account["account_id"]]
-    for e in register.dont_touch(log, today):  # blocchi decisi nel registro
-        until = f" fino al {e['until']:%d/%m}" if e["until"] else ""
-        plan.dont_touch.append(f"«{e['campaign_name']}»{until}: {e['why']} (registro)")
+    all_log = _safe(source, "change_log")
+    log = [e for e in all_log if e["account_id"] == account["account_id"]]
     sel = select(source, account, th, kpis)
     if sel.get("available"):
         for group in ("below", "scale", "no_target"):
@@ -139,91 +133,362 @@ def evaluate(source, account: dict, as_of: date | None) -> dict:
                 c["diagnosis"] = diagnose(source, c, th, cq, findings)
     return {"checks": checks, "findings": findings, "campaigns": cq, "camp": camp,
             "plan": plan, "quality": quality_measured(source, account), "selection": sel,
-            "register": _register_view(log, today)}
+            "todo": _todo(plan, status, log, today, all_log)}
 
 
-def _register_view(log: list, today: date) -> dict:
-    """Voci del registro raggruppate per stato, con data di verifica e numeri di partenza."""
+WHO = {"decide_specialist": "Specialist", "serve_senior": "Senior"}
+
+
+def _entry(e: dict, log: list, today: date) -> dict:
+    """Voce del registro pronta per la pagina: numeri di partenza, data di verifica, azioni."""
     import json
 
-    items = []
-    for e in log:
-        try:
-            base = json.loads(e["baseline"]) if e["baseline"] else []
-        except ValueError:
-            base = []
-        check = register.check_date(e)
-        items.append({**e, "baseline_rows": base if isinstance(base, list) else [base],
-                      "check": check, "is_due": e in register.due(log, today),
-                      "label": register.STATO_LABEL.get(e["status"], e["status"]),
-                      "actions": [a for a, (src, _) in register.AZIONI.items()
-                                  if e["status"] in src]})
-    order = {s: i for i, s in enumerate(register.STATI)}
-    items.sort(key=lambda x: (not x["is_due"], order.get(x["status"], 9), x["id"]))
-    return {"items": items, "open": sum(x["status"] in ("proposta", "approvata") or x["is_due"]
-                                        for x in items)}
+    try:
+        base = json.loads(e["baseline"]) if e["baseline"] else []
+    except ValueError:
+        base = []
+    kind = e["kind"]
+    actions = [a for a, (src, _) in register.AZIONI.items() if e["status"] in src]
+    if kind == "decisione":
+        actions = [a for a in actions if a in ("approva", "scarta")]
+    elif kind == "verifica":
+        actions = [a for a in actions if a in ("verificata", "scarta")]
+    elif kind == "preparazione":
+        actions = []  # la prepara Claude
+    elif e["decides"] == "Advertiser":  # la fa e decide l'advertiser: niente "approva"
+        actions = [a for a in actions if a not in ("approva",)
+                   and not (a == "verificata" and e["status"] == "proposta")]
+    else:
+        actions = [a for a in actions if a != "fatta"
+                   and not (a == "verificata" and e["status"] == "proposta")]
+    return {**e, "baseline_rows": base if isinstance(base, list) else [base],
+            "check": register.check_date(e), "is_due": e in register.due(log, today),
+            "label": register.STATO_LABEL.get(e["status"], e["status"]), "actions": actions,
+            "done": register.is_done(e)}
 
 
-def sidebar() -> list[dict]:
-    """Tutti gli account di tutti i clienti, con lo stato in una parola."""
-    items = []
-    for slug in clients():
-        source = CsvSource(data_root() / slug)
-        for a in source.read("accounts"):
-            plan = evaluate(source, a, None)["plan"]
-            if plan.blocked:
-                status, cls = "Bloccato", "bad"
-            elif plan.tasks:
-                status, cls = f"{len(plan.tasks)} da fare", "warn"
+def _todo(plan, status: list, log: list, today: date, all_log: list | None = None) -> dict:
+    """Tutto quello che c'è da fare sull'account, diviso per chi deve agire.
+
+    - mine: tocca all'advertiser (attività "puoi farlo", passi da eseguire, risultati da
+      verificare)
+    - decide: aspetta la decisione dello specialist o del senior
+    - later: passi che aspettano un altro passo, una data o la fine di un blocco
+    - hold: in corso, da non toccare (apprendimento, test, blocchi, modifiche appena fatte)
+    - closed: chiusi (verificati, scartati, decisioni prese, materiali preparati)
+    """
+    all_log = all_log if all_log is not None else log
+    entries = [_entry(e, log, today) for e in log]
+    # per decidere da quando si può eseguire contano anche i blocchi già decisi che partono
+    # più avanti (es. "niente modifiche durante la promo")
+    blocks = [b for b in all_log if b["kind"] == "da_non_toccare"
+              and b["status"] not in ("scartata", "verificata")
+              and (b["until"] is None or b["until"] >= today)]
+
+    def blocked_until(e: dict) -> date | None:
+        """Fine del blocco di un'altra voce sulle stesse campagne (non della stessa pipeline)."""
+        ids = set(e["campaign_id"].split("|")) - {""}
+        dates = [b["until"] for b in blocks if b["id"] != e["id"] and b["until"]
+                 and (not e["pipeline"] or b["pipeline"] != e["pipeline"])
+                 and ids & set(b["campaign_id"].split("|"))]
+        return max(dates) + timedelta(days=1) if dates else None  # "fino al" è compreso
+
+    def who_acts(e: dict) -> str:
+        if e["status"] == "approvata" or e["is_due"]:
+            return "Tu"
+        if e["executor"] == "Claude":
+            return "Claude"
+        if e["decides"] == "Advertiser":
+            return "Tu"
+        return e["decides"]
+
+    # un'attività del Copilota sullo stesso oggetto di un passo aperto del registro sparisce:
+    # il passo del registro (deciso con più dati, es. da un brief) la sostituisce
+    open_titles = " ".join(e["title"] for e in entries
+                           if e["status"] in ("proposta", "approvata"))
+    tasks = [t for t in plan.tasks if not (
+        t.rule == "riattiva_oggetto"
+        and any(f"«{n}»" in open_titles for n in re.findall(r"«([^»]+)»", t.title)))]
+    mine: list[dict] = [{"task": t} for t in tasks if t.level == "puoi_farlo"]
+    decide: dict[str, list] = {"Specialist": [], "Senior": []}
+    for t in tasks:
+        if t.level in WHO:
+            decide[WHO[t.level]].append({"task": t})
+    later = []
+    for e in entries:
+        if e["kind"] == "da_non_toccare" or e["done"] and not e["is_due"]:
+            continue
+        if not (e["is_due"] or e["status"] in ("proposta", "approvata")):
+            continue
+        who = who_acts(e)
+        e["who"] = who
+        e["waits"] = register.blockers(e, all_log)
+        # una decisione si può prendere subito; è l'esecuzione che aspetta la fine del blocco
+        dates = [d for d in (e["start"] if e["start"] and e["start"] > today else None,
+                             blocked_until(e) if e["kind"] == "modifica" and who == "Tu"
+                             else None) if d]
+        e["after"] = max(dates) if dates else None
+        if e["waits"] or e["after"] or who == "Claude":
+            later.append(e)
+        elif who == "Tu":
+            mine.append({"entry": e})
+        else:
+            decide.setdefault(who, []).append({"entry": e})
+    hold = [{"what": d, "why": "", "until": None} for d in plan.dont_touch]
+    for s in status:
+        if s["learning"] or s["in_test"]:
+            hold.append({"what": s["object_name"],
+                         "why": "È in un test." if s["in_test"] else "È in apprendimento: "
+                         "ogni modifica lo fa ripartire.", "until": s["until"]})
+    for e in register.dont_touch(log, today):
+        hold.append({"what": e["campaign_name"], "why": e["why"], "until": e["until"]})
+    for e in entries:
+        if e["status"] == "applicata" and e["kind"] == "modifica" and not e["is_due"]:
+            hold.append({"what": e["campaign_name"],
+                         "why": f"Modifica appena fatta: «{e['title']}». Si guarda il risultato "
+                                "prima di cambiare altro.", "until": e["check"]})
+    closed = [e for e in entries if e["status"] in ("verificata", "scartata")
+              or (e["done"] and e["kind"] in ("decisione", "preparazione"))]
+    n_decide = sum(len(v) for v in decide.values())
+    return {"mine": mine, "decide": {k: v for k, v in decide.items() if v}, "hold": hold,
+            "later": later, "closed": closed, "count": len(mine) + n_decide,
+            "n_mine": len(mine),
+            "n_decide": n_decide}
+
+
+SEV_OF_PRIORITY = {1: "critico", 2: "attenzione", 3: "info"}
+PLATFORM_LABEL = {"google": "Google Ads", "meta": "Meta Ads"}
+WHO_LABEL = {"Tu": "Tocca a te", "Specialist": "Specialist", "Senior": "Senior",
+             "Regola": "Regola"}
+
+
+def _uid(*parts: str) -> str:
+    return re.sub(r"[^A-Za-z0-9-]", "-", "-".join(parts))
+
+
+def client_board(slug: str, as_of: date | None = None) -> dict:
+    """Tutto il lavoro di un cliente, account per account, come elenco unico.
+
+    Ogni voce ha: gruppo (mine | decide | hold | later), chi agisce, gravità e il contenuto
+    per la scheda di dettaglio (attività del Copilota, proposta del registro o blocco).
+    """
+    source = CsvSource(client_dir(slug))
+    view = AsOfSource(source, as_of) if as_of else source
+    today = as_of or date.today()
+    accounts, items, blocked = [], [], []
+    for a in source.read("accounts"):
+        ev = evaluate(view, a, as_of)
+        plan, todo = ev["plan"], ev["todo"]
+        acc = a["account_id"]
+        accounts.append({"a": a, "plan": plan, "todo": todo})
+        if plan.blocked:
+            blocked.append({"a": a, "headline": plan.headline})
+
+        def add(group: str, who: str, kind: str, obj, sev: str, uid: str, sub: str,
+                right: str, a=a) -> None:
+            items.append({"uid": uid, "group": group, "who": who, "kind": kind, "obj": obj,
+                          "sev": sev, "a": a, "sub": sub, "right": right})
+
+        def add_x(x: dict, group: str, who: str, n: int, acc=acc, a=a) -> None:
+            if "task" in x:
+                t = x["task"]
+                add(group, who, "task", t, SEV_OF_PRIORITY.get(t.priority, "info"),
+                    _uid("t", acc, group, str(n)), f"{PLATFORM_LABEL[a['platform']]} · "
+                    f"{a['name']} · {t.module}", WHO_LABEL.get(who, who))
             else:
-                status, cls = "Tutto ok", "ok"
-            items.append({"slug": slug, "client": client_label(slug), "a": a,
-                          "status": status, "cls": cls, "missing": len(plan.missing)})
-    return items
+                e = x["entry"]
+                sev = ("critico" if e["is_due"] else "info" if group == "later"
+                       else "attenzione")
+                days = (today - e["created"]).days
+                waits = e.get("waits") or []
+                right = (f"dopo il passo {waits[0]['step']}" if waits and waits[0]["step"]
+                         else "dopo un altro passo" if waits else
+                         f"dal {e['after']:%d/%m}" if e.get("after") else
+                         "lo prepara Claude" if e.get("who") == "Claude" else
+                         "da verificare" if e["is_due"] else
+                         "oggi" if days == 0 else
+                         f"{days} {'giorno' if days == 1 else 'giorni'}")
+                sub = f"{PLATFORM_LABEL[a['platform']]} · {e['campaign_name']}"
+                if e["pipeline"]:
+                    sub = f"{e['pipeline']} · passo {e['step']} · " + sub
+                add(group, who, "entry", e, sev, _uid("r", e["id"]), sub, right)
+
+        if plan.blocked:
+            for n, t in enumerate(plan.tasks):
+                add_x({"task": t}, "mine", "Tu", n)
+        else:
+            for n, x in enumerate(todo["mine"]):
+                add_x(x, "mine", "Tu", n)
+            for who, xs in todo["decide"].items():
+                for n, x in enumerate(xs):
+                    add_x(x, "decide", who, n)
+            for n, e in enumerate(todo["later"]):
+                add_x({"entry": e}, "later", e.get("who") or "Tu", n)
+        for n, h in enumerate(todo["hold"]):
+            add("hold", "", "hold", h, "info", _uid("h", acc, str(n)),
+                f"{PLATFORM_LABEL[a['platform']]} · {a['name']}",
+                f"fino al {h['until']:%d/%m}" if h["until"] else "in corso")
+    sev_rank = {"critico": 0, "attenzione": 1, "info": 2}
+    group_rank = {"mine": 0, "decide": 1, "later": 2, "hold": 3}
+    order = {a["a"]["account_id"]: i for i, a in enumerate(accounts)}
+    items.sort(key=lambda i: (order[i["a"]["account_id"]], group_rank[i["group"]],
+                              sev_rank[i["sev"]]))
+    open_items = [i for i in items if i["group"] in ("mine", "decide")]
+    busy = {i["a"]["account_id"] for i in open_items}
+    return {"source": source, "accounts": accounts, "items": items, "blocked": blocked,
+            "stats": {"open": len(open_items),
+                      "mine": sum(i["group"] == "mine" for i in items),
+                      "decide": sum(i["group"] == "decide" for i in items),
+                      "hold": sum(i["group"] in ("hold", "later") for i in items),
+                      "quiet": len(accounts) - len(busy), "accounts": len(accounts)}}
 
 
-def page(request: Request, template: str, ctx: dict, current: tuple | None = None):
+def _data_dates(source) -> str:
+    """Riga di stato: fino a quando arrivano i dati di ogni fonte."""
+    parts = []
+    for table, label in (("ga_campaign_daily", "Google"), ("meta_ad_daily", "Meta"),
+                         ("backend_daily", "CRM")):
+        rows = _safe(source, table)
+        if rows:
+            parts.append(f"{label} al {max(r['date'] for r in rows):%d/%m}")
+    return " · ".join(parts)
+
+
+def nav_context(slug: str | None, board: dict | None = None) -> dict:
+    ctx: dict = {"nav_clients": [(s, client_label(s)) for s in clients()]}
+    if not slug:
+        return ctx
+    board = board or client_board(slug)
+    ctx.update(nav_count=board["stats"]["open"],
+               nav_missing=sum(len(a["plan"].missing) > 0 for a in board["accounts"]) or None,
+               nav_has_meta=any(a["a"]["platform"] == "meta" for a in board["accounts"]))
+    return ctx
+
+
+def page(request: Request, template: str, ctx: dict, nav: str | None = None,
+         board: dict | None = None):
+    slug = ctx.get("slug")
     return templates.TemplateResponse(request, template, {
-        **ctx, "sidebar": sidebar(), "current": current,
+        **nav_context(slug, board), **ctx, "nav": nav,
     })
 
 
 @app.get("/")
 def home():
-    items = sidebar()
-    if not items:
+    found = clients()
+    if not found:
         return HTMLResponse("<p>Nessun cliente in data/.</p>")
-    first = next((i for i in items if i["slug"] != "sample"), items[0])
-    return RedirectResponse(f"/a/{first['slug']}/{first['a']['account_id']}", status_code=303)
+    first = next((s for s in found if s != "sample"), found[0])
+    return RedirectResponse(f"/c/{first}", status_code=303)
 
 
-@app.get("/c/{slug}")
-def client_redirect(slug: str, msg: str | None = None):
-    acc = CsvSource(client_dir(slug)).read("accounts")[0]["account_id"]
-    suffix = f"?msg={quote(msg)}" if msg else ""
-    return RedirectResponse(f"/a/{slug}/{acc}{suffix}", status_code=303)
+@app.get("/c/{slug}", response_class=HTMLResponse)
+def todo_page(request: Request, slug: str, account: str = "", item: str = "",
+              al: str | None = None, msg: str | None = None):
+    as_of = date.fromisoformat(al) if al else None
+    board = client_board(slug, as_of)
+    return page(request, "todo.html", {
+        "slug": slug, "client": client_label(slug), "board": board, "account": account,
+        "item": item, "al": al, "msg": msg, "dates": _data_dates(board["source"]),
+        "nav_account": account,
+    }, nav="dafare", board=board)
 
 
-@app.get("/a/{slug}/{account_id}", response_class=HTMLResponse)
-def account_page(request: Request, slug: str, account_id: str, tab: str = "oggi",
-                 al: str | None = None, msg: str | None = None):
+def _account_view(request: Request, slug: str, account: str, view: str,
+                  al: str | None, msg: str | None):
     source = CsvSource(client_dir(slug))
-    account = next((a for a in source.read("accounts") if a["account_id"] == account_id), None)
-    if account is None:
-        raise HTTPException(404, "Account non trovato")
+    accs = source.read("accounts")
+    if view == "creativita":
+        accs = [a for a in accs if a["platform"] == "meta"] or accs
+    acc = next((a for a in accs if a["account_id"] == account), accs[0])
     as_of = date.fromisoformat(al) if al else None
     view_source = AsOfSource(source, as_of) if as_of else source
-    ev = evaluate(view_source, account, as_of)
-    if tab == "creativita" and account["platform"] != "meta":
-        tab = "oggi"
+    ev = evaluate(view_source, acc, as_of)
     return page(request, "account.html", {
-        "slug": slug, "client": client_label(slug), "account": account, "tab": tab,
-        "al": al, "msg": msg, "updated": as_of or last_date(source),
-        "kpi": kpis(view_source, account, as_of), **ev,
+        "slug": slug, "client": client_label(slug), "account": acc, "accounts": accs,
+        "tab": view, "al": al, "msg": msg, "updated": as_of or last_date(source),
+        "dates": _data_dates(source), "kpi": kpis(view_source, acc, as_of), **ev,
         "maps": [f for f in ev["findings"] if f.issue_code == "diversity_map"],
-        "semaforo_class": SEMAFORO_CLASS,
+        "semaforo_class": SEMAFORO_CLASS, "nav_account": account,
         "checks_sorted": sorted(ev["checks"], key=lambda c: -c.status.rank),
-    }, current=(slug, account_id))
+    }, nav=view)
+
+
+@app.get("/c/{slug}/campagne", response_class=HTMLResponse)
+def campaigns_page(request: Request, slug: str, account: str = "", al: str | None = None,
+                   msg: str | None = None):
+    return _account_view(request, slug, account, "campagne", al, msg)
+
+
+@app.get("/c/{slug}/creativita", response_class=HTMLResponse)
+def creative_page(request: Request, slug: str, account: str = "", al: str | None = None,
+                  msg: str | None = None):
+    return _account_view(request, slug, account, "creativita", al, msg)
+
+
+@app.get("/c/{slug}/dati", response_class=HTMLResponse)
+def data_page(request: Request, slug: str, account: str = "", al: str | None = None,
+              msg: str | None = None):
+    return _account_view(request, slug, account, "dati", al, msg)
+
+
+@app.get("/c/{slug}/scheda", response_class=HTMLResponse)
+def profile_page(request: Request, slug: str):
+    folder = client_dir(slug)
+    source = CsvSource(folder)
+    return page(request, "profile.html", {
+        "slug": slug, "client": client_label(slug), "p": profile.build(source, folder),
+        "dates": _data_dates(source),
+    }, nav="scheda")
+
+
+@app.get("/c/{slug}/brief", response_class=HTMLResponse)
+def brief_page(request: Request, slug: str, id: str = "", msg: str | None = None):
+    folder = client_dir(slug)
+    source = CsvSource(folder)
+    briefs = brief.load(folder)
+    b = next((x for x in briefs if x["id"] == id), briefs[0] if briefs else None)
+    ctx: dict = {"slug": slug, "client": client_label(slug), "briefs": briefs, "b": b,
+                 "msg": msg}
+    if b:
+        today = date.today()
+        res = brief.check(source, b, today)
+        log = _safe(source, "change_log")
+        created = {e["id"]: e for e in log if e["pipeline"] == b["id"]}
+        steps = [{**s, **(created.get(s["id"]) or {})} for s in res["steps"]]
+        by_id = {s["id"]: s for s in steps}
+        for s in steps:
+            s["done"] = register.is_done(s)
+            s["label"] = register.STATO_LABEL.get(s["status"], s["status"])
+            s["deps"] = [by_id[d] for d in (s["depends"] or "").split("|") if d in by_id]
+        ctx.update(res=res, steps=steps, created=bool(created), today=today)
+    return page(request, "brief.html", ctx, nav="brief")
+
+
+@app.post("/c/{slug}/brief/{brief_id}/pipeline")
+def brief_pipeline(slug: str, brief_id: str):
+    """Scrive nel registro i passi proposti per il brief: da qui entrano in «Da fare»."""
+    folder = client_dir(slug)
+    b = next((x for x in brief.load(folder) if x["id"] == brief_id), None)
+    if b is None:
+        raise HTTPException(404, "Brief non trovato")
+    res = brief.check(CsvSource(folder), b, date.today())
+    n = brief.create_pipeline(folder, res["steps"])
+    msg = (f"Pipeline creata: {n} passi nel registro e in «Da fare»" if n
+           else "La pipeline c'era già")
+    return RedirectResponse(f"/c/{slug}/brief?id={quote(brief_id)}&msg={quote(msg)}",
+                            status_code=303)
+
+
+@app.get("/a/{slug}/{account_id}")
+def account_redirect(slug: str, account_id: str, tab: str = "oggi", al: str | None = None):
+    """Vecchi indirizzi per account: portano alle pagine del cliente filtrate."""
+    if account_id not in {a["account_id"] for a in CsvSource(client_dir(slug)).read("accounts")}:
+        raise HTTPException(404, "Account non trovato")
+    path = {"oggi": "", "registro": "", "campagne": "/campagne", "guardare": "/campagne",
+            "creativita": "/creativita", "dati": "/dati", "segnali": "/dati"}.get(tab, "")
+    q = f"?account={quote(account_id)}" + (f"&al={al}" if al else "")
+    return RedirectResponse(f"/c/{slug}{path}{q}", status_code=303)
 
 
 @app.post("/a/{slug}/{account_id}/registro/{entry_id}")
@@ -231,7 +496,6 @@ def register_action(slug: str, account_id: str, entry_id: str, action: str = For
                     note: str = Form(""), result: str = Form("")):
     """Decisione o avanzamento di una voce del registro. Non scrive sulle piattaforme."""
     folder = client_dir(slug)
-    base = f"/a/{slug}/{account_id}?tab=registro"
     if action not in register.AZIONI:
         raise HTTPException(400, "Azione non valida")
     entry = next((e for e in register.read(folder) if e["id"] == entry_id), None)
@@ -243,11 +507,11 @@ def register_action(slug: str, account_id: str, entry_id: str, action: str = For
         try:
             e = register.apply_action(folder, entry_id, action, date.today(), note.strip(),
                                       result.strip())
-            msg = f"{e['id']}: {register.STATO_LABEL[e['status']]}"
+            msg = f"«{e['title']}»: {register.STATO_LABEL[e['status']].lower()}"
         except ValueError as err:
             msg = str(err)
-    return RedirectResponse(f"{base}&msg={quote(msg)}", status_code=303)
-
+    return RedirectResponse(f"/c/{slug}?item={_uid('r', entry_id)}&msg={quote(msg)}",
+                            status_code=303)
 
 
 # ---------- Export CRM ----------
@@ -384,7 +648,7 @@ async def tracking_save(request: Request, slug: str):
 def rules_page(request: Request):
     regole = yaml.safe_load((CONFIG_DIR / "regole.yaml").read_text(encoding="utf-8"))
     return page(request, "rules.html", {"proposte": regole["proposte"],
-                                        "azioni": regole["azioni"]})
+                                        "azioni": regole["azioni"]}, nav="regole")
 
 
 # ---------- KPI dello specialist ----------
@@ -411,7 +675,8 @@ def kpi_form(request: Request, slug: str):
     current = read_kpis(source)
     pairs = sorted(set(_lines_in_data(source)) | set(current))
     rows = [{"platform": p, "line": line, **(current.get((p, line)) or {})} for p, line in pairs]
-    return page(request, "kpi.html", {"slug": slug, "client": client_label(slug), "rows": rows})
+    return page(request, "kpi.html", {"slug": slug, "client": client_label(slug), "rows": rows},
+                nav="kpi")
 
 
 @app.post("/c/{slug}/kpi")

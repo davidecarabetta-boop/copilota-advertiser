@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Brief · {{ client }} · Copilota Advertiser{% endblock %}
+{% block body %}
+{% set eur = m.eur %}
+{% set KIND = {'decisione': 'Decisione', 'preparazione': 'Preparazione', 'modifica': 'Modifica', 'verifica': 'Verifica', 'da_non_toccare': 'Blocco'} %}
+<header class="page-head">
+  <div>
+    <h1>Brief</h1>
+    {% if b %}<p class="meta">{{ b.titolo }} · {{ b.scritto_da }} il {{ b.data.strftime('%d/%m') if b.data.strftime is defined else b.data }} · dal {{ res.start.strftime('%d/%m') }} al {{ res.end.strftime('%d/%m') }}{% if b.budget_extra %} · budget in più: {% for k, v in b.budget_extra.items() %}{{ 'Google' if k == 'google' else 'Meta' }} {{ eur(v) }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}</p>{% endif %}
+  </div>
+</header>
+
+{% if briefs | length > 1 %}
+<form class="filters" method="get"><label class="filter"><span>Brief</span>
+  <select name="id" onchange="this.form.submit()">{% for x in briefs %}<option value="{{ x.id }}" {% if x.id == b.id %}selected{% endif %}>{{ x.titolo }}</option>{% endfor %}</select></label></form>
+{% endif %}
+{% if msg %}<p class="alertline" role="status"><span class="sev info"></span>{{ msg }}</p>{% endif %}
+
+{% if not b %}
+<p class="card muted">Nessun brief. I brief stanno in <code>data/{{ slug }}/briefs/</code>.</p>
+{% else %}
+
+<div class="board">
+  <section class="card">
+    <h2>{{ b.titolo }}</h2>
+    <div class="sec"><h3>Cosa chiede l'advertiser</h3><p>{{ b.testo }}</p></div>
+    <div class="sec"><h3>Obiettivo</h3><p>{{ b.obiettivo }}</p></div>
+    <div class="sec"><h3>Materiali</h3><p>{{ b.materiali }}</p></div>
+  </section>
+
+  <section class="card">
+    <h2>Controllo del Copilota</h2>
+    <p>{{ res.summary }}</p>
+    <h3>Prima di partire</h3>
+    <ul class="plain">{% for o in res.prereq %}
+      <li><div style="display:flex;gap:10px;align-items:baseline"><span class="sev {{ o.sev }}"></span><b>{{ o.titolo }}</b></div>
+        <ul class="steps" style="margin-left:20px">{% for x in o.motivi %}<li class="muted">{{ x }}</li>{% endfor %}</ul>
+        {% if o.proposta %}<p style="margin-left:20px">{{ o.proposta }}</p>{% endif %}</li>
+    {% endfor %}</ul>
+  </section>
+</div>
+
+<h2 class="section-title">Le richieste, una per una</h2>
+<div class="list">
+  {% for o in res.results %}
+  <div class="card" style="border:0;border-top:1px solid var(--line);border-radius:0">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center"><span class="badge {{ o.sev }}">{{ o.label }}</span><b>{{ o.titolo }}</b></div>
+    {% if o.proposta %}<p><b>Come la facciamo:</b> {{ o.proposta }}</p>{% endif %}
+    <details><summary>Perché</summary><ul class="steps" style="margin-top:6px">{% for x in o.motivi %}<li>{{ x }}</li>{% endfor %}</ul></details>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="page-head" style="align-items:center">
+  <div>
+    <h2 class="section-title">Pipeline</h2>
+    {% set ex = steps | groupby('executor') %}
+    <p class="muted">{{ steps | length }} passi in ordine. {% for k, g in steps | groupby('executor') if k %}{{ k }}: {{ g | length }}{{ ' · ' if not loop.last }}{% endfor %}. Chi esegue e chi decide sono scritti per ogni passo.</p>
+  </div>
+  {% if not created %}
+  <form method="post" action="/c/{{ slug }}/brief/{{ b.id }}/pipeline"><button class="btn primary">Crea la pipeline nel registro</button></form>
+  {% else %}<a class="btn" href="/c/{{ slug }}">Vai a Da fare</a>{% endif %}
+</div>
+{% if not created %}<p class="note">È una proposta: finché non la crei, non entra in «Da fare». Creandola, ogni passo va a chi lo deve fare o decidere.</p>{% endif %}
+<div class="card tablewrap"><table>
+  <thead><tr><th class="num">#</th><th>Passo</th><th>Esegue</th><th>Decide</th><th>Da quando</th><th>Dopo</th><th>Stato</th></tr></thead>
+  <tbody>{% for s in steps %}<tr>
+    <td class="num">{{ s.step }}</td>
+    <td><span class="tag">{{ KIND.get(s.kind, s.kind) }}</span> {{ s.title }}<br><span class="subtle">{{ s.why }}</span></td>
+    <td>{{ s.executor or '—' }}</td>
+    <td>{{ s.decides }}</td>
+    <td>{% if s.kind == 'da_non_toccare' %}{{ s.start.strftime('%d/%m') if s.start else 'subito' }} → {{ s.until.strftime('%d/%m') }}{% else %}{{ s.start.strftime('%d/%m') if s.start else 'subito' }}{% endif %}</td>
+    <td>{% for d in s.deps %}<span class="tag" title="{{ d.title }}">{{ d.step }}{{ ' ✓' if d.done }}</span> {% else %}—{% endfor %}</td>
+    <td>{% if not created %}<span class="badge">proposto</span>{% elif s.done %}<span class="badge ok">fatto</span>{% elif s.status == 'scartata' %}<span class="badge">scartato</span>{% else %}<span class="badge attenzione">{{ s.label if s.label is defined else s.status }}</span>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+
+{% set mc = b.materiali_claude or {} %}
+{% if mc %}
+<h2 class="section-title">Materiali preparati da Claude</h2>
+<p class="muted">Bozze dei passi «Preparazione». Tra parentesi quadre i dati che arrivano dal cliente.</p>
+<div class="board" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr))">
+  {% if mc.google %}{% set g = mc.google %}
+  <section class="card">
+    <h3>{{ g.titolo }}</h3><p class="muted">{{ g.note }}</p>
+    <div class="tablewrap"><table><thead><tr><th>Titoli</th><th class="num">Caratteri</th></tr></thead><tbody>
+      {% for t in g.titoli %}<tr><td>{{ t }}</td><td class="num">{{ t | length }}/30</td></tr>{% endfor %}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th>Descrizioni</th><th class="num">Caratteri</th></tr></thead><tbody>
+      {% for t in g.descrizioni %}<tr><td>{{ t }}</td><td class="num">{{ t | length }}/90</td></tr>{% endfor %}</tbody></table></div>
+    <div class="sec"><h3>Estensione promozione</h3><p>{{ g.promozione }}</p></div>
+    <div class="sec"><h3>Immagini</h3><p>{{ g.immagini }}</p></div>
+  </section>
+  {% endif %}
+  {% if mc.meta %}{% set mm = mc.meta %}
+  <section class="card">
+    <h3>{{ mm.titolo }}</h3><p class="muted">{{ mm.note }}</p>
+    <div class="sec"><h3>Tre messaggi</h3><ul>{% for x in mm.messaggi %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    <div class="sec"><h3>Formati</h3><ul>{% for x in mm.formati %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    <div class="sec"><h3>Testo principale</h3><p>{{ mm.testo_principale }}</p></div>
+  </section>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

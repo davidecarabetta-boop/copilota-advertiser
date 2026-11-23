@@ -66,7 +66,7 @@ campagne:                        # giudizio delle campagne contro i KPI dello sp
   quota_spesa_min_pct: 10        # pesa almeno il 10% della spesa: vale la pena segnalarla
   tolleranza_kpi_pct: 10         # si segnala quando supera il KPI di oltre il 10% (confermato 2026-11-22)
   tolleranza_volume_pct: 10      # lead del mese sotto il volume richiesto di oltre il 10%
-  utm_non_abbinati_min_lead: 50  # lead con UTM di campagne che non si trovano: da sistemare
+  utm_non_abbinati_min_lead: 50  # lead con UTM di campagne non presenti nel periodo: solo informazione (campagne chiuse o rinominate)
 
 google:
   impression_share_persa_budget_alert_pct: 20
