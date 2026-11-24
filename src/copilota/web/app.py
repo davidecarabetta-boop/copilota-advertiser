@@ -17,10 +17,10 @@ from urllib.parse import quote
 
 import yaml
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from copilota import brief, profile, register
+from copilota import brief, creative_review, profile, register
 from copilota.campaigns import campaign_quality, judge, read_kpis, volume_check
 from copilota.config import CONFIG_DIR, load_thresholds
 from copilota.creative import analyze_account
@@ -409,6 +409,8 @@ def _account_view(request: Request, slug: str, account: str, view: str,
         "tab": view, "al": al, "msg": msg, "updated": as_of or last_date(source),
         "dates": _data_dates(source), "kpi": kpis(view_source, acc, as_of), **ev,
         "maps": [f for f in ev["findings"] if f.issue_code == "diversity_map"],
+        "reviews": (creative_review.build(view_source, client_dir(slug), acc["account_id"])
+                    if view == "creativita" and acc["platform"] == "meta" else None),
         "semaforo_class": SEMAFORO_CLASS, "nav_account": account,
         "checks_sorted": sorted(ev["checks"], key=lambda c: -c.status.rank),
     }, nav=view)
@@ -424,6 +426,16 @@ def campaigns_page(request: Request, slug: str, account: str = "", al: str | Non
 def creative_page(request: Request, slug: str, account: str = "", al: str | None = None,
                   msg: str | None = None):
     return _account_view(request, slug, account, "creativita", al, msg)
+
+
+@app.get("/c/{slug}/schede/{name}")
+def review_image(slug: str, name: str):
+    """Immagine di una scheda creativa (data/<cliente>/schede_creative/img/<name>)."""
+    folder = (client_dir(slug) / creative_review.FOLDER / "img").resolve()
+    f = (folder / name).resolve()
+    if f.parent != folder or not f.is_file():
+        raise HTTPException(404, "Immagine non trovata")
+    return FileResponse(f)
 
 
 @app.get("/c/{slug}/dati", response_class=HTMLResponse)

@@ -51,6 +51,14 @@ Regole e soglie vivono solo in `config/regole.yaml` e `config/soglie.yaml`. Non 
 4. Leggere il semaforo per concept (`troppo presto`, `ok`, `prepara il cambio`, `in ritardo`, `spento`, `dati insufficienti`) e la mappa angolo × formato. Concept diversi con lo stesso angolo e formato **non** sono diversità.
 5. Con Segnali rossi le diagnosi creatività non vanno all'advertiser: solo il ticket.
 
+## Procedura: schede creative (giudizio sulle singole immagini)
+
+Quando si chiede di analizzare, giudicare o "fare le schede" delle creatività di un cliente.
+1. Seguire [riferimenti/scheda_creativa.md](riferimenti/scheda_creativa.md): dall'annuncio all'immagine giusta (una creatività può avere più immagini), poi la scheda in `data/<cliente>/schede_creative/<creative_id>.yaml` con campi e controlli di `config/scheda_creativa.yaml`.
+2. Solo immagini statiche delle campagne a conversione. Catalogo e video: dirlo, non inventare.
+3. Aprire la scheda Creatività dell'app: le schede compaiono con i numeri e il confronto con la campagna; se una scheda ha valori non ammessi, l'app lo segnala.
+4. In chat: per le 2–3 creatività con più spesa, cosa funziona, cosa la indebolisce e il primo test da fare. Ricordare che le schede sono da confermare.
+
 ## Formato delle istruzioni per l'advertiser
 Per ogni azione: **cosa succede / perché / come fare / cosa non fare**, frasi brevi, niente gergo non spiegato. Il livello (`puoi_farlo`, `serve_senior`, `vietato`) si prende da `config/regole.yaml`; un'azione che lì non c'è non si propone.
 

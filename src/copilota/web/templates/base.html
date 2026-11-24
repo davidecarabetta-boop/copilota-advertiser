@@ -135,6 +135,14 @@ code,.mono{font-family:var(--f-mono);font-size:.85em}
 .buttons{display:flex;flex-wrap:wrap;gap:10px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:20px;display:grid;gap:12px;min-width:0}
 .card h2{font-size:20px}.card h3{font-size:17px}
+.review h4{font-size:15px;margin:0 0 6px}
+.review ul:not(.plain){margin:0;padding-left:1.2em;display:grid;gap:4px}
+.review-grid{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:20px;align-items:start}
+.review-img{width:100%;border-radius:6px;border:1px solid var(--line)}
+.review-body{display:grid;gap:10px;min-width:0}
+.review .tags{display:flex;flex-wrap:wrap;gap:6px}
+.review-nums td.num,.review-nums th.num{white-space:nowrap}
+@media (max-width:640px){.review-grid{grid-template-columns:minmax(0,1fr)}.review-img{max-width:280px}}
 .muted{color:var(--muted)}
 .note{background:var(--warn-soft);border-radius:7px;padding:10px 14px}
 .banner{border-radius:8px;padding:14px 16px;display:grid;gap:4px;background:var(--sunk)}

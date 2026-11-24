@@ -1,0 +1,74 @@
+# Scheda creativa: come Claude guarda una singola creatività (immagine statica) e cosa scrive.
+# Fonte unica: la skill la usa per compilare le schede, il codice per validarle e mostrarle.
+# Le schede compilate stanno in data/<cliente>/schede_creative/<creative_id>.yaml.
+# Stato: bozza da validare con il senior.
+
+# Campi a valori chiusi: servono a sommare e confrontare le creatività tra loro.
+campi:
+  leva:                 # il messaggio principale
+    - prezzo_modello    # "a partire da X €" su un prodotto preciso
+    - rata
+    - sconto_importo    # "-2.500 €", "fino a 1.000 € di vantaggi"
+    - regalo            # buono carburante, accessori
+    - promo_servizio    # officina, noleggio, servizio con prezzo
+    - disponibilita     # pronta consegna, stock
+    - garanzia_servizio
+    - prova_sociale
+    - brand
+  soggetto:
+    - prodotto_singolo
+    - gruppo_prodotti
+    - persone
+    - servizio
+    - solo_testo
+  formato: ["1:1", "4:5", "9:16", "1.91:1"]
+  palette: [chiara, colorata, scura]
+  densita_testo: [bassa, media, alta]   # bassa: titolo e CTA; alta: tre o più blocchi di testo
+  # campi sì/no
+  prezzo_in_immagine: bool
+  condizioni_in_immagine: bool          # nota legale o condizioni dell'offerta
+  cta_in_immagine: bool
+
+# Controlli che Claude fa guardando l'immagine. Esito: ok, attenzione, problema.
+# Ogni esito diverso da ok ha una nota di una frase che dice cosa si vede.
+controlli:
+  - id: messaggio_unico
+    domanda: C'è un solo messaggio principale, capibile in 2 secondi?
+    perche: Nel feed si guarda un'immagine per un attimo. Tre offerte insieme non se ne legge nessuna.
+  - id: offerta_in_miniatura
+    domanda: Prezzo o offerta si leggono anche in miniatura sul telefono?
+    perche: Il numero è spesso il motivo del click e filtra chi non è interessato.
+  - id: prodotto_riconoscibile
+    domanda: Il prodotto e il suo nome si leggono senza ambiguità?
+    perche: Un nome spezzato o troncato può far pensare a un altro modello o a un'altra offerta.
+  - id: tipo_di_offerta
+    domanda: Si capisce che cosa si compra (nuovo, km 0, usato, noleggio, servizio)?
+    perche: È la prima domanda di chi compra e cambia il valore del prezzo.
+  - id: motivo_per_scegliere_noi
+    domanda: C'è un motivo concreto per scegliere questo venditore (consegna, garanzia, permuta, servizio)?
+    perche: Gli slogan generici sul prodotto li ha anche la concorrenza.
+  - id: cta_coerente
+    domanda: La CTA è coerente con l'offerta (niente urgenza senza scadenza o promo)?
+    perche: Un'urgenza senza motivo abbassa la fiducia e non aumenta i click buoni.
+  - id: contrasto
+    domanda: Il soggetto si stacca bene dallo sfondo?
+    perche: Se prodotto e sfondo si confondono, l'immagine perde attenzione.
+  - id: spazio_al_contenuto
+    domanda: Logo e decorazioni lasciano spazio a prodotto e offerta?
+    perche: Lo spazio dell'immagine è poco e il logo grande lo toglie a ciò che fa cliccare.
+  - id: testo_coerente
+    domanda: Immagine, titolo e testo dell'annuncio dicono la stessa cosa?
+    perche: Se il testo promette una cosa e l'immagine un'altra, chi arriva si sente preso in giro e il lead si perde.
+  - id: condizioni
+    domanda: Se c'è un prezzo o uno sconto, ci sono le condizioni dove servono?
+    perche: Prezzi "a partire da" e sconti vincolati senza condizioni sono un rischio. Lo verifica chi segue la parte legale.
+
+# Proposte di test: una sola modifica alla volta, stesso template, stesso ad set.
+test:
+  max_per_scheda: 3
+  regola: Ogni test cambia un solo elemento rispetto all'originale, così si capisce cosa ha fatto la differenza.
+
+# Lettura dei numeri accanto alla scheda
+numeri:
+  impressioni_min: 2000     # sotto questa soglia i numeri non si mostrano come giudizio
+  lead_min: 5               # sotto questa soglia il costo per lead si mostra come "pochi dati"

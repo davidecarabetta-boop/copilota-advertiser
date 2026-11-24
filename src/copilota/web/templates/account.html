@@ -137,6 +137,55 @@
   </section>
   {% else %}<section class="card"><p class="muted">Nessuna campagna a conversione con creatività.</p></section>{% endfor %}
 
+  {% if reviews is not none %}
+  <h2 class="section-title">Schede delle creatività</h2>
+  {% if not reviews.cards %}
+  <section class="card"><p class="muted">Nessuna scheda per questo account. Le compila Claude guardando le immagini: chiedi in chat «fai le schede creative di {{ client }}».</p></section>
+  {% else %}
+  <p class="muted">Cosa funziona e cosa no in ogni immagine, accanto ai suoi numeri. Le schede le compila Claude e vanno confermate da chi conosce il cliente. I numeri dicono cosa è successo, non perché: i test servono a capirlo.</p>
+  {% if reviews.levers | length > 1 %}
+  <div class="tablewrap"><table>
+    <caption class="muted" style="text-align:left;caption-side:top;padding-bottom:6px">Le schede raggruppate per messaggio principale.</caption>
+    <thead><tr><th>Messaggio</th><th class="num">Schede</th><th class="num">Spesa</th><th class="num">Lead</th><th class="num">CTR</th><th class="num">Costo per lead</th></tr></thead>
+    <tbody>{% for l in reviews.levers %}<tr><td>{{ l.leva | replace('_', ' ') }}</td><td class="num">{{ l.schede }}</td><td class="num">{{ eur(l.spend) }}</td><td class="num">{{ '%.0f' % l.leads }}</td><td class="num">{{ '%.2f%%' % l.ctr_pct if l.ctr_pct is not none else '—' }}</td><td class="num">{{ eur(l.cpl) if l.cpl else '—' }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+  {% for c in reviews.cards %}{% set s = c.s %}
+  <section class="card review" id="scheda-{{ s.creative_id }}">
+    <div class="review-grid">
+      {% if s.immagine %}<img class="review-img" src="/c/{{ slug }}/schede/{{ s.immagine.split('/')[-1] }}" alt="Creatività {{ s.nome }}" loading="lazy">{% endif %}
+      <div class="review-body">
+        <h3>{{ s.nome }}</h3>
+        <p class="muted">{{ c.campaigns | join(', ') or 'Nessun dato nel periodo' }}{% if not s.confermata %} · <span class="pill warn">da confermare</span>{% endif %}</p>
+        <div class="tags">{% for k, v in (s.campi or {}).items() %}{% if v is sameas true %}<span class="pill">{{ k | replace('_', ' ') }}</span>{% elif v is not sameas false %}<span class="pill">{{ 'testo ' if k == 'densita_testo' else '' }}{{ v | replace('_', ' ') }}</span>{% endif %}{% endfor %}</div>
+        <div class="tablewrap"><table class="review-nums">
+          <thead><tr><th></th><th class="num">Spesa</th><th class="num">Lead</th><th class="num">CTR</th><th class="num">Costo per lead</th></tr></thead>
+          <tbody>
+            <tr><td>Questa creatività</td><td class="num">{{ eur(c.perf.spend) }}</td><td class="num">{{ '%.0f' % c.perf.leads }}</td><td class="num">{{ '%.2f%%' % c.perf.ctr_pct if c.perf.ctr_pct is not none else '—' }}</td><td class="num"><b>{{ eur(c.perf.cpl) if c.perf.cpl else '—' }}</b></td></tr>
+            {% if c.campaign %}<tr class="muted"><td>Media della campagna</td><td class="num">{{ eur(c.campaign.spend) }}</td><td class="num">{{ '%.0f' % c.campaign.leads }}</td><td class="num">{{ '%.2f%%' % c.campaign.ctr_pct if c.campaign.ctr_pct is not none else '—' }}</td><td class="num">{{ eur(c.campaign.cpl) if c.campaign.cpl else '—' }}</td></tr>{% endif %}
+          </tbody>
+        </table></div>
+        {% if c.judgement %}<p><b>{{ c.judgement | capitalize }}.</b></p>{% endif %}
+      </div>
+    </div>
+    {% if s.punti_forti %}
+    <div><h4>Cosa funziona</h4><ul>{% for p in s.punti_forti %}<li>{{ p }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    <div><h4>Controlli{% if c.problems or c.warnings %} <span class="muted" style="font-weight:400">· {{ c.problems }} {{ 'problema' if c.problems == 1 else 'problemi' }}, {{ c.warnings }} da migliorare</span>{% endif %}</h4>
+      <ul class="plain">{% for k in c.checks %}
+        <li><span class="pill {{ {'ok':'ok','attenzione':'warn','problema':'bad'}.get(k.esito, '') }}">{{ k.esito }}</span> {{ k.domanda }}
+          {% if k.nota %}<p class="muted">{{ k.nota }}</p>{% endif %}</li>
+      {% endfor %}</ul>
+    </div>
+    {% if s.test %}
+    <div><h4>Test da proporre (una modifica alla volta)</h4><ul>{% for t in s.test %}<li><b>{{ t.cambia }}</b>{% if t.ipotesi %}<br><span class="muted">{{ t.ipotesi }}</span>{% endif %}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if c.errors %}<p class="alertline"><span class="sev attenzione"></span>Scheda da sistemare ({{ s._file }}): {{ c.errors | join('; ') }}.</p>{% endif %}
+  </section>
+  {% endfor %}
+  {% endif %}
+  {% endif %}
+
 {# ---------- Dati e controlli ---------- #}
 {% elif tab == 'dati' %}
   {% set miss = plan.missing | map(attribute='page') | list %}
