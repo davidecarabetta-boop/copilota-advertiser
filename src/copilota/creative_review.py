@@ -65,6 +65,9 @@ def validate(scheda: dict, rubric: dict) -> list[str]:
         elif value not in allowed:
             errors.append(f"'{name}': valore '{value}' non ammesso")
     known = {c["id"] for c in rubric["controlli"]}
+    missing = known - {c.get("id") for c in scheda.get("controlli") or []}
+    if scheda.get("controlli") and missing:
+        errors.append("mancano i controlli " + ", ".join(sorted(missing)))
     for c in scheda.get("controlli") or []:
         if c.get("id") not in known:
             errors.append(f"controllo sconosciuto '{c.get('id')}'")
@@ -106,6 +109,22 @@ def _judgement(perf: dict, campaign: dict, rubric: dict) -> str | None:
     return "costo per lead in linea con la media della campagna"
 
 
+def _groups(checks: list[dict], rubric: dict) -> list[dict]:
+    """Controlli divisi per lettera ABCD (più il gruppo SearchOn), i problemi prima."""
+    sources = rubric.get("fonti") or {}
+    out = []
+    for g in rubric.get("gruppi") or []:
+        items = [c for c in checks if c.get("gruppo") == g["id"]]
+        if not items:
+            continue
+        items.sort(key=lambda c: -OUTCOMES.index(c["esito"]) if c.get("esito") in OUTCOMES else 0)
+        names = sorted({sources.get(c["fonte"], {}).get("nome", c["fonte"])
+                        for c in items if c.get("fonte")})
+        out.append({**g, "checks": items, "fonti": names,
+                    "ok": sum(c.get("esito") == "ok" for c in items)})
+    return out
+
+
 def build(source: DataSource, folder: Path, account_id: str,
           rubric: dict | None = None) -> dict:
     """Schede dell'account con numeri e confronto, più un riepilogo per leva."""
@@ -134,8 +153,9 @@ def build(source: DataSource, folder: Path, account_id: str,
         perf = _totals(ad_rows)
         camp_ids = sorted({r["campaign_id"] for r in ad_rows})
         camp = _totals([r for c in camp_ids for r in by_campaign[c]]) if camp_ids else {}
-        checks = [{**c, "domanda": controls.get(c.get("id"), {}).get("domanda", c.get("id")),
-                   "perche": controls.get(c.get("id"), {}).get("perche", "")}
+        checks = [{**c, **{k: controls.get(c.get("id"), {}).get(k, "")
+                           for k in ("perche", "gruppo", "fonte", "linea_guida")},
+                   "domanda": controls.get(c.get("id"), {}).get("domanda", c.get("id"))}
                   for c in s.get("controlli") or []]
         cards.append({
             "s": s, "perf": perf, "campaign": camp,
@@ -143,6 +163,7 @@ def build(source: DataSource, folder: Path, account_id: str,
             "judgement": _judgement(perf, camp, rubric) if ad_rows else None,
             "checks": sorted(checks, key=lambda c: -OUTCOMES.index(c.get("esito", "ok"))
                              if c.get("esito") in OUTCOMES else 0),
+            "groups": _groups(checks, rubric),
             "problems": sum(c.get("esito") == "problema" for c in checks),
             "warnings": sum(c.get("esito") == "attenzione" for c in checks),
             "errors": validate(s, rubric),

@@ -1,6 +1,10 @@
 # Scheda creativa: chiamate MCP e regole di compilazione
 
 Campi, controlli e limiti stanno in `config/scheda_creativa.yaml`: leggerlo prima di compilare.
+I controlli seguono il metodo **ABCD di Google** (Attention, Branding, Connection, Direction,
+validato da Kantar), adattato all'immagine statica, con gli asset distintivi di Ehrenberg-Bass
+per il Branding. Il gruppo **S (Regole SearchOn)** è nostro e non validato: va compilato, ma
+nella risposta in chat va detto che quei controlli sono da confermare.
 Le schede vanno in `data/<cliente>/schede_creative/<creative_id>.yaml`, le immagini in
 `data/<cliente>/schede_creative/img/` (cartella esclusa da git).
 
@@ -24,8 +28,9 @@ Guardare l'immagine (Read del file) e compilare:
 - `campi`: solo valori ammessi dal config. Se nessun valore va bene, scriverlo all'utente invece di inventarne uno.
 - `testi`: trascrivere titolo, offerta, claim, CTA dell'immagine e il primo testo principale.
 - `punti_forti`: 2–3 frasi su cosa funziona, ognuna con il perché.
-- `controlli`: tutti quelli del config. Esito `ok`, `attenzione` o `problema`; per ogni esito diverso da `ok` una nota di una frase che dice **cosa si vede** nell'immagine, non un consiglio generico.
-- `test`: al massimo 3, ognuno cambia **un solo** elemento (es. prezzo → rata; claim → fatto concreto). Con l'ipotesi in una frase.
+- `controlli`: tutti quelli del config, nessuno escluso (l'app segnala quelli mancanti). Si compilano lettera per lettera: A, B, C, D, poi S. Esito `ok`, `attenzione` o `problema`; per ogni esito diverso da `ok` una nota di una frase che dice **cosa si vede** nell'immagine, non un consiglio generico.
+- `persone` (Humanize the story): se nell'immagine non ci sono persone l'esito è `attenzione`, non `problema`: è uno spunto di test, non un errore.
+- `test`: al massimo 3, ognuno cambia **un solo** elemento (es. prezzo → rata; claim → fatto concreto). Con l'ipotesi in una frase. Partire dalle lettere ABCD con esito peggiore.
 - `confermata: false`. La conferma la dà l'advertiser o il senior.
 
 Regole di scrittura: frasi brevi, niente gergo, niente giudizi sul gusto ("brutta", "vecchia"). Si giudica se l'immagine fa il suo lavoro: farsi notare, farsi capire, dare un motivo per cliccare.
@@ -43,13 +48,15 @@ immagine: img/62528bcb1d18af3d83624fe1a322dbc8.jpg
 compilata_il: 2026-11-24
 confermata: false
 campi: {leva: prezzo_modello, soggetto: prodotto_singolo, formato: "1:1", palette: colorata,
-        densita_testo: media, prezzo_in_immagine: true, condizioni_in_immagine: false,
-        cta_in_immagine: true}
+        densita_testo: media, persone_in_immagine: false, prezzo_in_immagine: true,
+        condizioni_in_immagine: false, cta_in_immagine: true}
 testi: {titolo: Citroen C3 Aircross, offerta: A partire da 12.334 €, claim: Look inconfondibile,
         cta: Approfittane ora}
 punti_forti:
   - Il prezzo nel bollino fucsia è l'elemento più visibile e si legge anche in miniatura.
-controlli:
+controlli:   # in una scheda vera ci sono tutti e 14
+  - {id: prodotto_riconoscibile, esito: problema, nota: "«Aircross» è piccolo sotto «C3»: di sfuggita si legge C3, un'altra auto."}
+  - {id: persone, esito: attenzione, nota: Solo l'auto scontornata, nessuna persona né scena d'uso.}
   - {id: tipo_di_offerta, esito: problema, nota: Non dice se l'auto è nuova, km 0 o usata.}
 test:
   - {cambia: Aggiungere "Km 0" o "Usato garantito" sopra il prezzo, ipotesi: Chi clicca sa già cosa compra e il lead è più qualificato.}

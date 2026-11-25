@@ -17,8 +17,9 @@ GOOD = {
               "palette": "colorata", "densita_testo": "media", "prezzo_in_immagine": False,
               "condizioni_in_immagine": False, "cta_in_immagine": True},
     "punti_forti": ["Un solo messaggio, chiaro."],
-    "controlli": [{"id": "messaggio_unico", "esito": "ok"},
-                  {"id": "tipo_di_offerta", "esito": "problema", "nota": "Non dice se è usato."}],
+    "controlli": [{"id": c["id"], "esito": "ok"} for c in RUBRIC["controlli"]
+                  if c["id"] != "tipo_di_offerta"]
+                 + [{"id": "tipo_di_offerta", "esito": "problema", "nota": "Non dice se è usato."}],
     "test": [{"cambia": "Aggiungere 'Usato garantito'", "ipotesi": "Lead più qualificati."}],
 }
 
@@ -42,6 +43,27 @@ def test_validate_ok_and_errors():
     assert "controllo sconosciuto 'inventato'" in errors
     assert "controllo 'contrasto': manca la nota" in errors
     assert "più di 3 test" in errors
+    assert "mancano i controlli" in errors  # ne ha solo due
+
+
+def test_rubric_is_abcd_with_sources():
+    groups = {g["id"] for g in RUBRIC["gruppi"]}
+    assert groups == {"A", "B", "C", "D", "S"}
+    for c in RUBRIC["controlli"]:
+        assert c["gruppo"] in groups and c["fonte"] in RUBRIC["fonti"], c["id"]
+        if c["gruppo"] != "S":  # le lettere ABCD citano la linea guida da cui vengono
+            assert c.get("linea_guida"), c["id"]
+    assert all(c["fonte"] == "searchon" for c in RUBRIC["controlli"] if c["gruppo"] == "S")
+
+
+def test_groups_follow_abcd_order():
+    checks = [{**c, "esito": "ok"} for c in RUBRIC["controlli"]]
+    checks[-1]["esito"] = "problema"
+    groups = creative_review._groups(checks, RUBRIC)
+    assert [g["id"] for g in groups] == ["A", "B", "C", "D", "S"]
+    s = groups[-1]
+    assert s["checks"][0]["esito"] == "problema" and s["ok"] == len(s["checks"]) - 1
+    assert s["fonti"] == ["Regole SearchOn per il settore"]
 
 
 def test_build_adds_numbers_and_comparison(tmp_path):

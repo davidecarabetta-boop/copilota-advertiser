@@ -172,10 +172,16 @@
     <div><h4>Cosa funziona</h4><ul>{% for p in s.punti_forti %}<li>{{ p }}</li>{% endfor %}</ul></div>
     {% endif %}
     <div><h4>Controlli{% if c.problems or c.warnings %} <span class="muted" style="font-weight:400">· {{ c.problems }} {{ 'problema' if c.problems == 1 else 'problemi' }}, {{ c.warnings }} da migliorare</span>{% endif %}</h4>
-      <ul class="plain">{% for k in c.checks %}
-        <li><span class="pill {{ {'ok':'ok','attenzione':'warn','problema':'bad'}.get(k.esito, '') }}">{{ k.esito }}</span> {{ k.domanda }}
-          {% if k.nota %}<p class="muted">{{ k.nota }}</p>{% endif %}</li>
-      {% endfor %}</ul>
+      {% for g in c.groups %}
+      <div class="abcd">
+        <p class="abcd-head"><span class="abcd-letter{{ ' abcd-s' if g.id == 'S' }}">{{ g.id }}</span><b>{{ g.nome }}</b> <span class="muted">· {{ g.domanda }} · {{ g.ok }} ok su {{ g.checks | length }}</span></p>
+        <ul class="plain">{% for k in g.checks %}
+          <li><span class="pill {{ {'ok':'ok','attenzione':'warn','problema':'bad'}.get(k.esito, '') }}">{{ k.esito }}</span> {{ k.domanda }}
+            {% if k.nota %}<p class="muted">{{ k.nota }}</p>{% endif %}</li>
+        {% endfor %}</ul>
+        <p class="abcd-src">Fonte: {{ g.fonti | join(', ') }}</p>
+      </div>
+      {% endfor %}
     </div>
     {% if s.test %}
     <div><h4>Test da proporre (una modifica alla volta)</h4><ul>{% for t in s.test %}<li><b>{{ t.cambia }}</b>{% if t.ipotesi %}<br><span class="muted">{{ t.ipotesi }}</span>{% endif %}</li>{% endfor %}</ul></div>

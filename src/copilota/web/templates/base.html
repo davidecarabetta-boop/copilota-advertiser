@@ -142,6 +142,12 @@ code,.mono{font-family:var(--f-mono);font-size:.85em}
 .review-body{display:grid;gap:10px;min-width:0}
 .review .tags{display:flex;flex-wrap:wrap;gap:6px}
 .review-nums td.num,.review-nums th.num{white-space:nowrap}
+.abcd{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+.abcd:first-of-type{border-top:0}
+.abcd-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.abcd-letter{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:5px;background:var(--action);color:var(--on-action);font-weight:600;font-size:13px;flex:none}
+.abcd-letter.abcd-s{background:var(--sunk);color:var(--muted);border:1px dashed var(--line)}
+.abcd-src{font-size:12.5px;color:var(--faint)}
 @media (max-width:640px){.review-grid{grid-template-columns:minmax(0,1fr)}.review-img{max-width:280px}}
 .muted{color:var(--muted)}
 .note{background:var(--warn-soft);border-radius:7px;padding:10px 14px}
