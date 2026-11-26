@@ -422,6 +422,13 @@ def campaigns_page(request: Request, slug: str, account: str = "", al: str | Non
     return _account_view(request, slug, account, "campagne", al, msg)
 
 
+@app.get("/c/{slug}/business", response_class=HTMLResponse)
+def business_page(request: Request, slug: str, account: str = "", al: str | None = None,
+                  msg: str | None = None):
+    """Livello business: le campagne giudicate sul CRM contro i KPI dello specialist."""
+    return _account_view(request, slug, account, "business", al, msg)
+
+
 @app.get("/c/{slug}/creativita", response_class=HTMLResponse)
 def creative_page(request: Request, slug: str, account: str = "", al: str | None = None,
                   msg: str | None = None):

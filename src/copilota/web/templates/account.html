@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
-{% set TITLES = {'campagne': 'Campagne', 'creativita': 'Creatività', 'dati': 'Dati e controlli'} %}
+{% set TITLES = {'campagne': 'Campagne · Adv', 'business': 'Campagne · Business', 'creativita': 'Creatività', 'dati': 'Dati e controlli'} %}
 {% block title %}{{ TITLES[tab] }} · {{ account.name }} · Copilota Advertiser{% endblock %}
 {% block body %}
 {% set eur = m.eur %}
@@ -31,9 +31,9 @@
     <div class="tile static"><span>Spesa 30 giorni</span><b>{{ eur(kpi.spend) }}</b></div>
     <div class="tile static"><span>{{ 'Conversioni' if account.platform == 'google' else 'Lead' }} 30 giorni</span><b>{{ '{:,.0f}'.format(kpi.leads).replace(',', '.') }}</b></div>
     <div class="tile static"><span>Costo per {{ 'conversione' if account.platform == 'google' else 'lead' }}</span><b>{{ eur(kpi.cpl) if kpi.cpl else '—' }}</b></div>
-    <div class="tile static"><span>Lead diventati contratti</span>{% if kpi.quality %}<b>{{ '%.1f%%' % kpi.quality.contracts_pct }}</b><span class="subtle">lead dal {{ kpi.quality['from'].strftime('%d/%m') }} al {{ kpi.quality['to'].strftime('%d/%m') }}, dal CRM</span>{% else %}<b>?</b><a class="subtle" href="/c/{{ slug }}/crm">carica l'export CRM</a>{% endif %}</div>
   </div>
   {% endif %}
+  <p class="muted">Livello adv: costo per conversione della piattaforma contro il target (Ads Guardian, piattaforma o KPI dello specialist). La qualità dei lead dal CRM è nella vista <a href="/c/{{ slug }}/business?account={{ account.account_id }}">Business</a>.</p>
 
   {% macro diag(c, key) %}
     <details><summary>Cosa controllare su questa campagna</summary>
@@ -76,6 +76,20 @@
     </table></div>
   </details>
   {% endif %}
+  {% else %}
+  <p class="card muted">Per questo account non ci sono ancora i dati di piattaforma per campagna.</p>
+  {% endif %}
+
+{# ---------- Business ---------- #}
+{% elif tab == 'business' %}
+  <p class="muted">Livello business: le campagne giudicate sui lead del CRM contro i KPI dello specialist. Il costo per conversione della piattaforma è nella vista <a href="/c/{{ slug }}/campagne?account={{ account.account_id }}">Adv</a>.</p>
+  {% if kpi %}
+  <div class="tiles">
+    <div class="tile static"><span>Lead diventati contratti</span>{% if kpi.quality %}<b>{{ '%.1f%%' % kpi.quality.contracts_pct }}</b><span class="subtle">lead dal {{ kpi.quality['from'].strftime('%d/%m') }} al {{ kpi.quality['to'].strftime('%d/%m') }}, dal CRM</span>{% else %}<b>?</b><a class="subtle" href="/c/{{ slug }}/crm">carica l'export CRM</a>{% endif %}</div>
+    {% for (p, line), k in (camp.kpis or {}).items() if p == account.platform and k.cost_per_contract %}
+    <div class="tile static"><span>Costo per contratto {{ line }}, obiettivo</span><b>{{ eur(k.cost_per_contract) }}</b><span class="subtle">vale per la linea intera, non per la singola campagna</span></div>
+    {% endfor %}
+  </div>
   {% endif %}
 
   {% if campaigns %}
@@ -107,10 +121,8 @@
         <ul>{% for r in no_leads %}<li class="muted">{{ r.name }}: {{ eur(r.spend) }}</li>{% endfor %}</ul></li>{% endif %}
     </ul>
   </details>
-  {% endif %}
-
-  {% if not selection.available and not campaigns %}
-  <p class="card muted">Per questo account non ci sono ancora i dati per campagna.</p>
+  {% else %}
+  <p class="card muted">Per questo account non ci sono ancora i dati del CRM per campagna. <a href="/c/{{ slug }}/crm">Carica l'export CRM</a>.</p>
   {% endif %}
 
 {# ---------- Creatività ---------- #}

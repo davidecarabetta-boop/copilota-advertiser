@@ -30,6 +30,11 @@ def test_pages_render(client):
         assert c.get(f"/a/demo/act_1000000002?tab={tab}").status_code == 200
     for path in ("/c/demo/crm", "/c/demo/concetti", "/c/demo/tracciamento"):
         assert c.get(path).status_code == 200
+    # due viste separate: adv (piattaforma contro il target) e business (CRM contro i KPI)
+    adv = c.get("/c/demo/campagne?account=1000000001").text
+    business = c.get("/c/demo/business?account=1000000001").text
+    assert "Campagne · Adv" in adv and "Qualità dei lead, dal CRM" not in adv
+    assert "Campagne · Business" in business and "Rispetto al target" not in business
     past = c.get("/a/demo/1000000001?tab=segnali&al=2026-11-10").text
     assert "stai guardando il 2026-11-10" in past and "Il 10/11" in past and "Il 21/11" not in past
     assert c.get("/a/demo/nessuno").status_code == 404

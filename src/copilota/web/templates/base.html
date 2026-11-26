@@ -209,7 +209,10 @@ ul.conds li.ok{color:var(--ok)} ul.conds li.no{color:var(--crit)} ul.conds li.un
         Da fare{% if nav_count is not none %}<span class="n">{{ nav_count }}</span>{% endif %}</a>
       <a href="/c/{{ slug }}/campagne{{ acc_q }}" {% if nav == 'campagne' %}aria-current="page"{% endif %}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 20V11M10 20V5M15 20v-7M20 20V9M3 20h18"/></svg>
-        Campagne</a>
+        Campagne · Adv</a>
+      <a href="/c/{{ slug }}/business{{ acc_q }}" {% if nav == 'business' %}aria-current="page"{% endif %}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16v12H4z"/><path d="M9 7V5h6v2M4 12h16"/></svg>
+        Campagne · Business</a>
       {% if nav_has_meta %}
       <a href="/c/{{ slug }}/creativita{{ acc_q }}" {% if nav == 'creativita' %}aria-current="page"{% endif %}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5-8.5 8.5"/></svg>
