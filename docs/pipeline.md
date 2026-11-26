@@ -12,7 +12,9 @@ Fotografia ─► Selezione ─► Diagnosi (MCP) ─► Proposta ─► OK spec
 ## 1. Fotografia
 Una riga per campagna con spesa, conversioni, CPA/ROAS, target, budget pianificato e pacing.
 - **Fonte**: Ads Guardian (warehouse), quando sarà agganciato. Fino ad allora la costruisce il
-  Copilota dai dati che ha (MCP, KPI dello specialist). Il resto della pipeline legge solo la
+  Copilota dai dati che ha (MCP, KPI dello specialist). Regola fissa (decisa il 2026-11-26): ogni
+  campo che Ads Guardian ha si prende da lì, sempre; il Copilota riempie solo i campi mancanti e
+  lo scrive in `target_source` o in una colonna di fonte. Il resto della pipeline legge solo la
   tabella `campaign_snapshot`, quindi cambiare la fonte non cambia niente a valle.
 - **Finestra assestata**: CPA e ROAS si calcolano escludendo gli ultimi 7 giorni, che non sono
   ancora consolidati (conversioni in ritardo).
