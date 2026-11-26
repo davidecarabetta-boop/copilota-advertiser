@@ -100,6 +100,8 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         # chi esegue (Claude | Advertiser | Specialist | Senior), da quando si può fare
         "pipeline": str, "step": _opt(int), "depends": str, "executor": str,
         "start": _opt(date.fromisoformat),
+        # modifica strutturata per Editor e per il prompt MCP (JSON, vedi copilota.apply)
+        "change": str,
     },
     # KPI dello specialist per piattaforma e linea di business (es. meta / AUTO_B2C), su due
     # livelli: adv (target_cpa, confrontato col CPA di piattaforma) e business (costi dal CRM)
@@ -129,7 +131,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
 
 # Colonne aggiunte dopo: se il CSV non le ha ancora, si leggono vuote.
 OPTIONAL_COLUMNS: dict[str, set[str]] = {
-    "change_log": {"pipeline", "step", "depends", "executor", "start"},
+    "change_log": {"pipeline", "step", "depends", "executor", "start", "change"},
 }
 
 Row = dict[str, Any]

@@ -59,6 +59,28 @@
     <div class="buttons">{% for a in e.actions %}<button class="btn {{ 'primary' if loop.first else '' }}" name="action" value="{{ a }}">{{ ACT[a] }}</button>{% endfor %}</div>
   </form>
   {% endif %}
+  {% if e.apply and not al %}{% set ap = e.apply %}
+  {% if ap.ready %}
+  <div class="apply">
+    <details class="apply-panel"><summary class="btn">Prepara la modifica</summary>
+      <div class="apply-body">
+        {% if ap.editor %}
+        <p>Testo per Google Ads Editor. {{ ap.editor_note }}</p>
+        <textarea id="editor-{{ e.id }}" rows="{{ ap.editor.count('\n') + 2 }}" readonly class="mono">{{ ap.editor }}</textarea>
+        <div class="buttons"><button class="btn primary" type="button" data-copy="editor-{{ e.id }}">Copia per Editor</button></div>
+        {% else %}<p class="muted">{{ ap.editor_note }}</p>{% endif %}
+      </div>
+    </details>
+    <details class="apply-panel"><summary class="btn">Crea prompt per MCP</summary>
+      <div class="apply-body">
+        <p>Da incollare in Claude Code: controlla i valori, mostra l'anteprima e aspetta il tuo ok prima di applicare con l'MCP ufficiale. Finché la scrittura non è attiva (fase 08) si ferma prima di scrivere.</p>
+        <textarea id="prompt-{{ e.id }}" rows="12" readonly>{{ ap.prompt }}</textarea>
+        <div class="buttons"><button class="btn primary" type="button" data-copy="prompt-{{ e.id }}">Copia il prompt</button></div>
+      </div>
+    </details>
+  </div>
+  {% else %}<p class="note">{{ ap.why_not }}</p>{% endif %}
+  {% endif %}
   {% set names = e.campaign_name.split(' + ') %}
   {% for b in e.baseline_rows %}
   <p class="metrics-title">Numeri di partenza{% if names | length == e.baseline_rows | length %} · {{ names[loop.index0] }}{% endif %} · dal {{ b.date_from }} al {{ b.date_to }}</p>

@@ -71,6 +71,12 @@ code,.mono{font-family:var(--f-mono);font-size:.85em}
 .filter span{font-size:13px;color:var(--muted)}
 .filter select,.filter input{all:unset;cursor:pointer;font-weight:500;width:100%;background:var(--surface);color:var(--fg)}
 .alertline{display:flex;gap:10px;align-items:baseline}
+.apply{display:grid;gap:8px}
+.apply-panel > summary{list-style:none;display:inline-flex;cursor:pointer}
+.apply-panel > summary::-webkit-details-marker{display:none}
+.apply-panel[open] > summary{background:var(--sunk)}
+.apply-body{display:grid;gap:8px;margin-top:8px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.apply-body textarea{width:100%;font-size:13px;resize:vertical;background:var(--sunk);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px}
 .switch{display:inline-flex;align-self:stretch;background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:3px;gap:3px}
 .switch a{display:grid;align-content:center;gap:0;padding:5px 16px;border-radius:6px;color:var(--muted);text-decoration:none;line-height:1.25}
 .switch a b{font-weight:600;font-size:14px}

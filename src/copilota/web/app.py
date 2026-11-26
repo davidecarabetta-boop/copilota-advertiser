@@ -20,7 +20,7 @@ from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from copilota import brief, creative_review, profile, register
+from copilota import apply, brief, creative_review, profile, register
 from copilota.campaigns import campaign_quality, judge, read_kpis, volume_check
 from copilota.config import CONFIG_DIR, load_thresholds
 from copilota.creative import analyze_account
@@ -309,6 +309,7 @@ def client_board(slug: str, as_of: date | None = None) -> dict:
                          "oggi" if days == 0 else
                          f"{days} {'giorno' if days == 1 else 'giorni'}")
                 sub = f"{PLATFORM_LABEL[a['platform']]} · {e['campaign_name']}"
+                e["apply"] = apply.build(e, client_label(slug), a["name"])
                 if e["pipeline"]:
                     sub = f"{e['pipeline']} · passo {e['step']} · " + sub
                 add(group, who, "entry", e, sev, _uid("r", e["id"]), sub, right)
