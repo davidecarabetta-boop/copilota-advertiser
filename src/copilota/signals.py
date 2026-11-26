@@ -1,0 +1,488 @@
+"""Modulo Segnali (fase 02): il cancello.
+
+Per ogni account produce una lista di controlli verde/giallo/rosso e un esito complessivo (`gate`).
+Se l'esito è rosso, gli altri moduli dicono solo "apri ticket".
+
+Controlli implementati: conversioni crollate, conversione principale assente (solo campagne a
+conversione), Enhanced Conversions / CAPI e copertura,
+riconciliazione piattaforma vs CRM (con deduplica), Consent Mode v2, conversione di ottimizzazione
+per lead gen, aggiornamento Customer Match, volume di conversioni per campagna.
+Non ancora: valore/margine (solo e-commerce) e obiettivo nuovi clienti (mancano i dati).
+"""
+
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+from enum import StrEnum
+
+from copilota.causes import find_cause
+from copilota.config import load_client
+from copilota.data import DataSource, Row
+
+
+class Status(StrEnum):
+    GREEN = "verde"
+    YELLOW = "giallo"
+    RED = "rosso"
+
+    @property
+    def rank(self) -> int:
+        return [Status.GREEN, Status.YELLOW, Status.RED].index(self)
+
+
+@dataclass(frozen=True)
+class Check:
+    account_id: str
+    group: str  # Tracking, Obiettivo, First-party, Volume
+    name: str
+    status: Status
+    detail: str  # testo per l'advertiser, in italiano
+    # blocca l'account (solo ticket) solo se i numeri sono davvero rotti: un rosso che si può
+    # affrontare con un'azione sulle campagne o con un ticket in parallelo non blocca
+    blocking: bool = False
+    data: dict = field(default_factory=dict, compare=False, hash=False)
+
+
+UNKNOWN = "dato non disponibile, da verificare a mano."
+
+
+def gate(checks: list[Check]) -> Status:
+    return max((c.status for c in checks), key=lambda s: s.rank, default=Status.GREEN)
+
+
+def blocked(checks: list[Check]) -> bool:
+    return any(c.blocking and c.status is Status.RED for c in checks)
+
+
+def _daily(rows: list[Row], account_id: str, metric: str) -> dict[date, float]:
+    out: dict[date, float] = defaultdict(float)
+    for r in rows:
+        if r["account_id"] == account_id:
+            out[r["date"]] += r[metric]
+    return out
+
+
+# Campagne che ottimizzano per conversioni: solo su queste hanno senso i controlli di volume
+# e di conversioni mancanti (traffico, interazione, video non cercano lead).
+GOOGLE_CONV_BIDDING = {
+    "MAXIMIZE_CONVERSIONS", "TARGET_CPA", "MAXIMIZE_CONVERSION_VALUE", "TARGET_ROAS",
+}
+META_CONV_OBJECTIVES = {"OUTCOME_LEADS", "OUTCOME_SALES", "LEAD_GENERATION", "CONVERSIONS"}
+# Categorie di azione di conversione Google che sono davvero lead o vendite
+LEAD_CATEGORIES = {
+    "SUBMIT_LEAD_FORM", "PHONE_CALL_LEAD", "IMPORTED_LEAD", "QUALIFIED_LEAD", "CONVERTED_LEAD",
+    "BOOK_APPOINTMENT", "REQUEST_QUOTE", "CONTACT", "PURCHASE", "STORE_SALE",
+}
+
+
+def _crm_quality(source: DataSource, account: Row, today: date) -> dict[date, tuple]:
+    """{giorno: (lead, qualificati, contratti)} dall'export CRM, solo giorni con la qualità."""
+    return {b["date"]: (b["leads"], b["qualified_leads"], b["contracts"] or 0)
+            for b in source.read("backend_daily")
+            if b["client"] == account["client"] and b["source"] == account["platform"]
+            and b["date"] <= today and b["qualified_leads"] is not None}
+
+
+def lead_quality(source: DataSource, account: Row, today: date, th: dict) -> dict | None:
+    """Qualità dei lead maturi dall'export CRM: finestra recente e periodo di confronto.
+
+    Nel CRM la fase è quella attuale, quindi si guardano solo lead arrivati da almeno
+    `qualita_giorni_maturazione` giorni. None se non ci sono abbastanza lead.
+    """
+    seg = th["segnali"]
+    crm = _crm_quality(source, account, today)
+    end = today - timedelta(days=seg["qualita_giorni_maturazione"])
+    start = end - timedelta(days=seg["qualita_finestra_giorni"] - 1)
+    ref_end = start - timedelta(days=1)
+    ref_start = ref_end - timedelta(days=seg["qualita_confronto_giorni"] - 1)
+
+    def window(a: date, b: date) -> dict:
+        vals = [v for d, v in crm.items() if a <= d <= b]
+        n = sum(v[0] for v in vals)
+        return {"from": a, "to": b, "leads": n,
+                "qualified_pct": sum(v[1] for v in vals) / n * 100 if n else None,
+                "contracts_pct": sum(v[2] for v in vals) / n * 100 if n else None}
+
+    recent, ref = window(start, end), window(ref_start, ref_end)
+    if recent["leads"] < seg["qualita_min_lead"]:
+        return None
+    return {"recent": recent, "ref": ref if ref["leads"] >= seg["qualita_min_lead"] else None}
+
+
+def _offline_quality(offline_q: dict[date, float], conv: dict[date, float]) -> dict[date, tuple]:
+    """{giorno: (conversioni piattaforma, qualificati caricati offline)}; vuoto se non c'è
+    nessun caricamento offline."""
+    if not any(offline_q.values()):
+        return {}
+    return {d: (conv[d], offline_q.get(d, 0.0)) for d in conv}
+
+
+def quality_measured(source: DataSource, account: Row) -> bool:
+    """True se c'è una fonte di qualità (export CRM o conversioni offline): senza, l'esito dice
+    se il tracciamento regge, non se l'account rende."""
+    crm = any(b["client"] == account["client"] and b["source"] == account["platform"]
+              and b["qualified_leads"] for b in source.read("backend_daily"))
+    offline = any(o["account_id"] == account["account_id"] and o["conversions"] > 0
+                  for o in source.read("offline_conversions_daily"))
+    return crm or offline
+
+
+def _crash_start(conv: dict[date, float], normal: float, today: date) -> date:
+    """Primo giorno da cui le conversioni restano sotto metà del livello normale."""
+    start = today
+    for d in sorted(conv, reverse=True):
+        if conv[d] >= normal * 0.5:
+            break
+        start = d
+    return start
+
+
+def _quality_from_crm(lq: dict | None, seg: dict, add) -> None:
+    if lq is None:
+        add("Valore", "Qualità dei lead", Status.YELLOW,
+            "Nell'export CRM ci sono troppo pochi lead maturi di questa piattaforma per "
+            "giudicarne la qualità.")
+        return
+    # Si confrontano i contratti: è l'unica fase che non cambia più. "In trattativa" è la fase
+    # di oggi e per i lead vecchi si è già trasformata in "perso": non è confrontabile.
+    r, ref = lq["recent"], lq["ref"]
+    txt = (f"Dei {r['leads']} lead arrivati tra il {r['from']:%d/%m} e il {r['to']:%d/%m}, il "
+           f"{r['contracts_pct']:.1f}% è diventato contratto e il {r['qualified_pct']:.0f}% è "
+           "ancora in trattativa o oltre")
+    if ref is None:
+        add("Valore", "Qualità dei lead", Status.GREEN, txt + ".", data=lq)
+        return
+    txt += (f". Nei {seg['qualita_confronto_giorni']} giorni prima i contratti erano il "
+            f"{ref['contracts_pct']:.1f}%.")
+    drop = (1 - r["contracts_pct"] / ref["contracts_pct"]) * 100 if ref["contracts_pct"] else 0
+    if drop >= seg["calo_tasso_qualificati_rosso_pct"]:
+        add("Valore", "Qualità dei lead", Status.RED,
+            txt + " I lead che diventano clienti sono calati: più lead non vuol dire più "
+            "clienti.", data=lq)
+    else:
+        add("Valore", "Qualità dei lead", Status.GREEN, txt, data=lq)
+
+
+def _conversion_rows(source: DataSource, platform: str, rows: list[Row]) -> list[Row]:
+    """Righe delle sole campagne a conversione, con `campaign_label` leggibile."""
+    if platform == "google":
+        return [{**r, "campaign_label": r["campaign_name"]} for r in rows
+                if r["bidding_strategy"] in GOOGLE_CONV_BIDDING]
+    campaigns = {c["campaign_id"]: c for c in source.read("meta_campaigns")}
+    out = []
+    for r in rows:
+        c = campaigns.get(r["campaign_id"])
+        if c is None or c["objective"] in META_CONV_OBJECTIVES:  # sconosciuta: la teniamo
+            out.append({**r, "campaign_label": c["campaign_name"] if c else r["campaign_id"]})
+    return out
+
+
+def check_account(source: DataSource, account: Row, th: dict) -> list[Check]:
+    acc, platform = account["account_id"], account["platform"]
+    seg, vol = th["segnali"], th["volume"]
+    table, cost_col, conv_col = (
+        ("ga_campaign_daily", "cost", "conversions")
+        if platform == "google"
+        else ("meta_ad_daily", "spend", "leads")
+    )
+    all_rows = [r for r in source.read(table) if r["account_id"] == acc]
+    rows = _conversion_rows(source, platform, all_rows)
+    tracking = next((t for t in source.read("tracking_status") if t["account_id"] == acc), None)
+    # tracciamento verificato a mano da SearchOn (config del cliente): un calo o uno scarto
+    # col CRM non vengono più attribuiti al tracciamento
+    verified = bool(load_client(account["client"]).get("tracciamento_verificato"))
+    checks: list[Check] = []
+
+    def add(group: str, name: str, status: Status, detail: str, blocking: bool = False,
+            data: dict | None = None) -> None:
+        checks.append(Check(acc, group, name, status, detail, blocking, data or {}))
+
+    if not all_rows:
+        add("Tracking", "Dati presenti", Status.RED, "Nessun dato per questo account.",
+            blocking=True)
+        return checks
+    today = max(r["date"] for r in all_rows)
+    if not rows:
+        add("Obiettivo", "Campagne a conversione", Status.YELLOW,
+            "Nessuna campagna ottimizza per conversioni: l'algoritmo non cerca lead.")
+    cost, conv = _daily(rows, acc, cost_col), _daily(rows, acc, conv_col)
+
+    # Conversioni crollate: ultimi N giorni contro il periodo precedente
+    recent_days = seg["giorni_recenti"]
+    cut = today - timedelta(days=recent_days - 1)
+    before = [d for d in conv if d < cut]
+    if before:
+        conv_before = sum(conv[d] for d in before) / len(before)
+        conv_recent = sum(v for d, v in conv.items() if d >= cut) / recent_days
+        cost_before = sum(cost[d] for d in before) / len(before)
+        cost_recent = sum(v for d, v in cost.items() if d >= cut) / recent_days
+        drop = (1 - conv_recent / conv_before) * 100 if conv_before else 0
+        if drop >= seg["calo_conversioni_rosso_pct"]:
+            txt = (f"Conversioni crollate del {drop:.0f}%: da {conv_before:.1f} a "
+                   f"{conv_recent:.1f} al giorno negli ultimi {recent_days} giorni "
+                   f"(spesa da {cost_before:.0f} € a {cost_recent:.0f} € al giorno).")
+            numbers = {"drop_pct": round(drop), "before": round(conv_before, 1),
+                       "recent": round(conv_recent, 1), "cost_before": round(cost_before),
+                       "cost_recent": round(cost_recent)}
+            crash_from = _crash_start(conv, conv_before, today)
+            cause = find_cause(source, account, crash_from, today,
+                               seg["causa_quota_conversioni_min_pct"])
+            if cause:
+                what = ("messo in pausa" if cause["kind"] == "pausa"
+                        else f"con budget tagliato da {cause['old_value']} € a "
+                             f"{cause['new_value']} €")
+                add("Tracking", "Andamento conversioni", Status.RED,
+                    f"{txt} Causa: il {cause['date']:%d/%m} è stato {what} "
+                    f"«{cause['object_name']}», che portava il {cause['share_pct']}% delle "
+                    "conversioni.", data={**numbers, "cause": cause})
+            elif verified:
+                add("Tracking", "Andamento conversioni", Status.RED,
+                    f"{txt} Il tracciamento è verificato e nella cronologia non c'è una modifica "
+                    "che lo spieghi: va controllata la consegna delle campagne.", data=numbers)
+            else:
+                add("Tracking", "Andamento conversioni", Status.RED,
+                    f"{txt} Nessuna modifica alle campagne lo spiega: controllare subito modulo "
+                    "e tracciamento.", blocking=True, data=numbers)
+        else:
+            add("Tracking", "Andamento conversioni", Status.GREEN,
+                f"{conv_recent:.1f} conversioni al giorno negli ultimi {recent_days} giorni "
+                f"(prima {conv_before:.1f}).")
+
+    # Zero conversioni nell'ultimo giorno, con una spesa che ne avrebbe dovute portare
+    total_cost, total_conv = sum(cost.values()), sum(conv.values())
+    cpa = total_cost / total_conv if total_conv else None
+    min_spend = cpa * seg["zero_conversioni_se_spesa_oltre_cpa_x"] if cpa else 0
+    if rows and conv[today] == 0 and cost[today] > 0 and cost[today] >= min_spend:
+        add("Tracking", "Conversione principale", Status.RED,
+            f"Il {today:%d/%m} si è speso {cost[today]:.0f} € con zero conversioni "
+            f"(di solito una ogni {cpa or 0:.0f} €): il tracciamento potrebbe essere rotto.",
+            blocking=not verified)
+    elif rows:
+        add("Tracking", "Conversione principale", Status.GREEN,
+            f"Il {today:%d/%m}: {conv[today]:.0f} conversioni con {cost[today]:.0f} € di spesa.")
+    conv_all = _daily(all_rows, acc, conv_col)
+    # Conversioni offline: nessuna riga per l'account = dato non importato (diverso da zero)
+    offline_rows = [o for o in source.read("offline_conversions_daily") if o["account_id"] == acc]
+    offline_q: dict[date, float] = defaultdict(float)
+    for o in offline_rows:
+        if o["stage"] == "qualified":
+            offline_q[o["date"]] += o["conversions"]
+
+    if not tracking:
+        add("Tracking", "Stato del tracciamento", Status.YELLOW,
+            "Stato del tracciamento non disponibile: " + UNKNOWN)
+
+    # Enhanced Conversions (Google) / CAPI (Meta)
+    if tracking:
+        if platform == "google":
+            ok = tracking["enhanced_conversions"]
+            if ok is None:
+                add("Tracking", "Enhanced Conversions", Status.YELLOW, UNKNOWN)
+            else:
+                off = "Non attive: Google vede meno conversioni di quelle reali."
+                add("Tracking", "Enhanced Conversions", Status.GREEN if ok else Status.YELLOW,
+                    "Attive." if ok else off)
+        else:
+            cov, min_cov = tracking["capi_coverage_pct"], seg["copertura_capi_min_pct"]
+            if tracking["capi_active"] is None:
+                add("Tracking", "CAPI", Status.YELLOW, UNKNOWN)
+            elif not tracking["capi_active"]:
+                add("Tracking", "CAPI", Status.YELLOW,
+                    "Conversions API non attiva: Meta vede solo gli eventi del Pixel.")
+            elif cov is not None and cov < min_cov:
+                add("Tracking", "CAPI", Status.YELLOW,
+                    f"Copertura CAPI {cov:.0f}%, sotto il minimo del {min_cov}%.")
+            else:
+                add("Tracking", "CAPI", Status.GREEN, "Attiva, copertura sufficiente.")
+
+    # Riconciliazione piattaforma vs CRM
+    win = seg["finestra_riconciliazione_giorni"]
+    start = today - timedelta(days=win - 1)
+    plat = sum(v for d, v in conv_all.items() if d >= start)
+    crm = sum(
+        b["leads"]
+        for b in source.read("backend_daily")
+        if b["client"] == account["client"]
+        and b["source"] == platform
+        and start <= b["date"] <= today
+    )
+    if crm == 0:
+        add("Tracking", "Riconciliazione con CRM", Status.YELLOW,
+            f"Nessun lead dal CRM negli ultimi {win} giorni: impossibile verificare i numeri.")
+    else:
+        gap = (plat - crm) / crm * 100
+        txt = f"Ultimi {win} giorni: piattaforma {plat:.0f}, CRM {crm}, scarto {gap:+.0f}%."
+        if verified and abs(gap) > seg["scarto_max_piattaforma_vs_backend_pct"]:
+            # tracciamento verificato: lo scarto viene da come si attribuiscono i lead (UTM,
+            # prodotti fuori dal CRM, conversioni multiple), non da un errore di conteggio
+            add("Tracking", "Riconciliazione con CRM", Status.YELLOW,
+                txt + " Il tracciamento è verificato: la differenza viene dall'attribuzione "
+                "(lead senza UTM, prodotti che il CRM non contiene, più conversioni per "
+                "lead). Non è un problema da risolvere sulle campagne.",
+                data={"attribution": True})
+        elif plat / crm >= seg["rapporto_rosso_piattaforma_su_backend"]:
+            add("Tracking", "Riconciliazione con CRM", Status.RED,
+                txt + " La piattaforma conta più del doppio: probabile doppio conteggio "
+                "(Pixel e Conversions API, o conversioni duplicate).", blocking=True)
+        elif abs(gap) > seg["scarto_rosso_piattaforma_vs_backend_pct"]:
+            add("Tracking", "Riconciliazione con CRM", Status.RED, txt, blocking=True)
+        elif abs(gap) > seg["scarto_max_piattaforma_vs_backend_pct"]:
+            add("Tracking", "Riconciliazione con CRM", Status.YELLOW, txt)
+        else:
+            add("Tracking", "Riconciliazione con CRM", Status.GREEN, txt)
+
+    if tracking:
+        # Consent Mode v2 (Google; su Meta non si applica)
+        if tracking["consent_mode_v2"] is None:
+            if platform == "google":
+                add("Tracking", "Consent Mode v2", Status.YELLOW, UNKNOWN)
+        elif tracking["consent_mode_v2"] is False:
+            add("Tracking", "Consent Mode v2", Status.RED, "Consent Mode v2 assente.",
+                blocking=True)
+        elif tracking["consent_mode_v2"]:
+            now, prev = tracking["consent_rate_pct"], tracking["consent_rate_prev_pct"]
+            drop = (prev - now) if now is not None and prev is not None else 0
+            if drop > seg["calo_consenso_alert_punti"]:
+                add("Tracking", "Consent Mode v2", Status.YELLOW,
+                    f"Tasso di consenso sceso di {drop:.0f} punti ({prev:.0f}% → {now:.0f}%).")
+            else:
+                add("Tracking", "Consent Mode v2", Status.GREEN, "Attivo, consenso stabile.")
+
+        # Obiettivo: lead gen senza qualità dal CRM (anche quando il caricamento si è fermato)
+        is_lead = account["objective"].startswith("lead")
+        uploads = [d for d, v in offline_q.items() if v > 0]
+        last = max([d for d in [tracking["crm_last_upload"], *uploads] if d], default=None)
+        stale = last is not None and (today - last).days > seg["crm_max_giorni_senza_caricamento"]
+        if is_lead and tracking["crm_quality_feedback"] and stale:
+            add("Obiettivo", "Conversione di ottimizzazione", Status.RED,
+                f"Il CRM non manda più la qualità dei lead dal {last:%d/%m/%Y} "
+                f"({(today - last).days} giorni): la piattaforma ottimizza su lead qualsiasi. "
+                "Far ripartire il caricamento delle conversioni offline.")
+        elif is_lead and tracking["crm_quality_feedback"] is None:
+            add("Obiettivo", "Conversione di ottimizzazione", Status.YELLOW,
+                "Ritorno della qualità dei lead dal CRM alla piattaforma: " + UNKNOWN)
+        elif is_lead and tracking["crm_quality_feedback"] is False:
+            add("Obiettivo", "Conversione di ottimizzazione", Status.RED,
+                f"Si ottimizza su '{tracking['optimization_event']}' senza la qualità dal CRM: "
+                "la piattaforma cerca lead qualsiasi, non lead buoni.")
+        else:
+            add("Obiettivo", "Conversione di ottimizzazione", Status.GREEN,
+                f"Ottimizzazione su '{tracking['optimization_event']}', "
+                "con la qualità dei lead dal CRM.")
+
+        # First-party: Customer Match
+        upd, max_days = tracking["customer_match_updated"], seg["customer_match_max_giorni"]
+        if upd is None:
+            add("First-party", "Customer Match", Status.YELLOW,
+                "Data dell'ultimo aggiornamento del pubblico clienti: " + UNKNOWN)
+        elif (today - upd).days > max_days:
+            add("First-party", "Customer Match", Status.YELLOW,
+                f"Pubblico clienti fermo al {upd:%d/%m/%Y} ({(today - upd).days} giorni, "
+                f"massimo {max_days}).")
+        else:
+            add("First-party", "Customer Match", Status.GREEN, f"Aggiornato il {upd:%d/%m/%Y}.")
+
+    # Obiettivo: conversioni contate che non sono lead (es. iscrizioni YouTube, visite)
+    actions = [a for a in source.read("ga_conversion_actions") if a["account_id"] == acc]
+    total_actions = sum(a["conversions"] for a in actions)
+    if total_actions:
+        junk = sorted((a for a in actions if a["category"] not in LEAD_CATEGORIES),
+                      key=lambda a: -a["conversions"])
+        share = sum(a["conversions"] for a in junk) / total_actions * 100
+        names = ", ".join(f"{a['conversion_action']} ({a['conversions']:.0f})" for a in junk[:3])
+        txt = (f"Il {share:.0f}% delle conversioni non sono lead: {names}. "
+               "L'algoritmo le insegue come se fossero clienti: toglierle dalle conversioni "
+               "principali.")
+        if share >= seg["quota_conversioni_non_lead_rosso_pct"]:
+            add("Obiettivo", "Conversioni non-lead", Status.RED, txt)
+        elif share >= seg["quota_conversioni_non_lead_giallo_pct"]:
+            add("Obiettivo", "Conversioni non-lead", Status.YELLOW, txt)
+        else:
+            add("Obiettivo", "Conversioni non-lead", Status.GREEN,
+                "Quasi tutte le conversioni contate sono lead.")
+
+    # Valore: qualità dei lead. Fonte: export CRM se c'è, altrimenti conversioni offline.
+    if account["objective"].startswith("lead"):
+        crm, offline = _crm_quality(source, account, today), _offline_quality(offline_q, conv_all)
+        lq = lead_quality(source, account, today, th) if crm else None
+        recent = [v for d, v in offline.items() if d >= cut]
+        older = [v for d, v in offline.items() if d < cut]
+        if crm:
+            _quality_from_crm(lq, seg, add)
+        elif not recent or not older or not sum(v[0] for v in older):
+            add("Valore", "Qualità dei lead", Status.YELLOW,
+                "Qualità dei lead non misurata: né export CRM né conversioni offline. Non si può "
+                "dire se l'account porta clienti. Servono l'export CRM (docs/export_crm.md) e il "
+                "caricamento offline dei lead qualificati sulla piattaforma.")
+        else:
+            r_old = sum(v[1] for v in older) / sum(v[0] for v in older) * 100
+            r_new = (sum(v[1] for v in recent) / sum(v[0] for v in recent) * 100
+                     if sum(v[0] for v in recent) else 0)
+            drop = (1 - r_new / r_old) * 100 if r_old else 0
+            txt = (f"Lead qualificati (conversioni offline): {r_new:.0f}% negli ultimi "
+                   f"{recent_days} giorni (prima {r_old:.0f}%).")
+            if drop >= seg["calo_tasso_qualificati_rosso_pct"]:
+                add("Valore", "Qualità dei lead", Status.RED,
+                    txt + " La qualità è crollata: più lead non vuol dire più clienti. Una "
+                    "parte del calo può essere ritardo di caricamento: verificare.")
+            else:
+                add("Valore", "Qualità dei lead", Status.GREEN, txt)
+
+        # Allineamento: il caricamento offline porta alla piattaforma tutti i qualificati del CRM?
+        win_start = today - timedelta(days=seg["finestra_riconciliazione_giorni"] - 1)
+        crm_q = sum(v[1] for d, v in crm.items() if d >= win_start)
+        off_q = sum(v for d, v in offline_q.items() if d >= win_start)
+        if crm_q and offline_rows:
+            gap = (crm_q - off_q) / crm_q * 100
+            txt = (f"Lead qualificati ultimi {seg['finestra_riconciliazione_giorni']} giorni: "
+                   f"CRM {crm_q:.0f}, caricati sulla piattaforma {off_q:.0f}.")
+            if gap > seg["scarto_offline_vs_crm_giallo_pct"]:
+                add("Valore", "Caricamento offline vs CRM", Status.YELLOW,
+                    txt + f" Il caricamento ne perde il {gap:.0f}%: l'algoritmo impara su una "
+                    "parte dei lead buoni.")
+            else:
+                add("Valore", "Caricamento offline vs CRM", Status.GREEN, txt)
+
+    # Volume: conversioni negli ultimi 30 giorni per campagna
+    month = today - timedelta(days=29)
+    per_camp: dict[str, float] = defaultdict(float)
+    days_seen: dict[str, set] = defaultdict(set)
+    meta_of: dict[str, dict] = {}  # tipo e strategia: servono a capire cosa si può accorpare
+    for r in rows:
+        if r["date"] >= month:
+            per_camp[r["campaign_label"]] += r[conv_col]
+            days_seen[r["campaign_label"]].add(r["date"])
+            meta_of[r["campaign_label"]] = {
+                "type": r.get("campaign_type", "?"), "bidding": r.get("bidding_strategy", "?")}
+    min_conv = vol["conversioni_min_mese_per_campagna"]
+    min_days = vol["giorni_min_prima_di_giudicare"]
+    # le campagne Brand restano separate per scelta: non si propongono da accorpare
+    low = sorted(
+        (c, n) for c, n in per_camp.items()
+        if n < min_conv and len(days_seen[c]) >= min_days and "brand" not in c.lower()
+    )
+    if not rows:
+        pass
+    elif low:
+        names = "; ".join(f"{c} ({n:.0f})" for c, n in low)
+        add("Volume", "Conversioni per campagna", Status.YELLOW,
+            f"Sotto le {min_conv} conversioni al mese: {names}. "
+            "L'algoritmo impara poco: valutare di accorpare.",
+            data={"campaigns": [{"name": c, "conversions": round(n), **meta_of.get(c, {})}
+                                for c, n in low],
+                  "min_conv": min_conv})
+    else:
+        add("Volume", "Conversioni per campagna", Status.GREEN,
+            f"Tutte le campagne sopra le {min_conv} conversioni al mese.")
+
+    return checks
+
+
+def ticket_text(account: Row, checks: list[Check]) -> str:
+    """Testo precompilato per il team analytics quando l'account è rosso."""
+    reds = [c for c in checks if c.status is Status.RED]
+    where = f"{account['platform']} {account['account_id']}"
+    lines = [f"[Copilota] Segnali rossi su {account['name']} ({where})", ""]
+    lines += [f"- {c.group} / {c.name}: {c.detail}" for c in reds]
+    lines += ["", "Finché non è risolto, sull'account non si fanno altre modifiche."]
+    return "\n".join(lines)

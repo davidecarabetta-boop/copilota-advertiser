@@ -15,3 +15,17 @@ brand:
   termini: [ratti, rattix]
   linee_guida: ""
 durata_media_concept_giorni: null
+tracciamento_verificato: "2026-11-22"   # confermato da SearchOn: lato tracciamento è tutto ok
+crm:                            # export Salesforce "Lead con prodotto e prezzo" (solo auto); fasi confermate da SearchOn il 2026-11-22
+  formato: salesforce_html
+  colonna_data: Data creazione
+  colonna_fase: Fase
+  fasi_qualificato: [In trattativa, Trattativa F&I, Confermato, Accordato, Approvato, Consegnato]
+  fasi_contratto: [Confermato, Accordato, Approvato, Consegnato]
+  sorgenti:                     # UTM Source -> piattaforma
+    google: [google, google+]
+    meta: [fb, ig, meta, an, th, igshopping]
+  linee_perimetro: [AUTO]       # l'export contiene solo auto: moto e noleggio non si giudicano
+  escludi:                      # Spagna fuori perimetro
+    where: [rattix.es]
+    utm_campaign_inizia_con: [ES_]

@@ -15,7 +15,10 @@ Ogni notte i dati di Google Ads e Meta degli account configurati arrivano in Big
    - Copertura incrementale: copertura cumulata per finestre, per calcolare la "copertura nuova".
    - Stato di consegna (incluso l'avviso di affaticamento creatività dove esposto).
 3. **Raggruppamento in concept**: tabella `creative_concepts` che assegna ogni annuncio/asset a un concept, con angolo e formato. All'inizio si compila a mano o con regole sul nome; più avanti classificazione automatica con Claude sull'anteprima.
-4. **Backend / CRM**: per i clienti pilota, import di ordini o lead (solo conteggi e valori aggregati per giorno, niente dati personali) per la riconciliazione.
+4. **Qualità dei lead, due fonti** (senza, l'account non è giudicabile sul rendimento):
+   - **Export CRM** del cliente (`backend_daily`): lead, lead qualificati e contratti per giorno di arrivo e piattaforma, solo conteggi. Specifica in `docs/export_crm.md`.
+   - **Conversioni offline sulle piattaforme** (`offline_conversions_daily`): quello che l'algoritmo riceve. Google: azioni di categoria `QUALIFIED_LEAD` / `CONVERTED_LEAD` per data di conversione, più lo stato dei caricamenti (`offline_conversion_upload_conversion_action_summary`). Meta: eventi server dal CRM sul dataset.
+   - Il modulo Segnali usa l'export CRM se c'è, altrimenti le offline, e confronta le due fonti.
 5. **Post-click** (per la fase 03b):
    - export GA4 in BigQuery del cliente: funnel del traffico a pagamento per piattaforma, campagna, landing page e dispositivo (solo aggregati);
    - URL finali e testi degli annunci (Google e Meta);

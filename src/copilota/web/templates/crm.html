@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Export CRM · {{ slug | upper }}{% endblock %}
+{% block body %}
+<p><a href="/c/{{ slug }}">← Torna a {{ client }}</a></p>
+<section class="card">
+  <h2>Export CRM</h2>
+  <p class="muted">Lead, lead qualificati e contratti per giorno di arrivo e piattaforma. Solo conteggi, nessun dato personale. Formato in <code>docs/export_crm.md</code>. Il caricamento sostituisce l'export precedente.</p>
+  {% if err %}<div class="banner bad" role="alert">{{ err }}</div>{% endif %}
+  {% if period %}
+  <p>Caricato ora: dal {{ period[0].strftime('%d/%m/%Y') }} al {{ period[1].strftime('%d/%m/%Y') }}</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Piattaforma</th><th class="num">Giorni</th><th class="num">Lead</th><th class="num">Qualificati</th><th class="num">Contratti</th></tr></thead>
+    <tbody>{% for src, s in summary.items() %}<tr><td>{{ src }}</td><td class="num">{{ s.giorni }}</td><td class="num">{{ s.leads }}</td><td class="num">{{ s.qualified }}</td><td class="num">{{ s.contracts }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="banner warn">Nessun export caricato: la qualità dei lead non è misurata.</div>{% endif %}
+  <form method="post" enctype="multipart/form-data" style="display:grid;gap:12px">
+    <label>File CSV <input type="file" name="file" accept=".csv,text/csv"></label>
+    <label>Oppure incolla il CSV
+      <textarea name="text" rows="8" placeholder="date,client,source,leads,qualified_leads,contracts&#10;2026-11-21,{{ slug | upper }},google,42,18,3"></textarea></label>
+    <div><button class="btn primary" type="submit">Carica</button></div>
+  </form>
+</section>
+{% endblock %}

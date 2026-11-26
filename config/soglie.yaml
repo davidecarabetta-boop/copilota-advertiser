@@ -2,7 +2,25 @@
 # (sovrascrivibili per cliente in config/clienti/<cliente>.yaml).
 
 segnali:
-  scarto_max_piattaforma_vs_backend_pct: 10
+  scarto_max_piattaforma_vs_backend_pct: 10       # oltre: giallo
+  scarto_rosso_piattaforma_vs_backend_pct: 30     # oltre: rosso
+  rapporto_rosso_piattaforma_su_backend: 2        # piattaforma >= 2x backend: deduplica rotta, rosso
+  finestra_riconciliazione_giorni: 30
+  giorni_recenti: 7                               # periodo recente per l'andamento conversioni
+  calo_conversioni_rosso_pct: 70                  # ultimi 7 giorni vs prima: oltre, rosso
+  zero_conversioni_se_spesa_oltre_cpa_x: 2        # zero conversioni ieri è rosso se spesa >= 2 CPA
+  crm_max_giorni_senza_caricamento: 7             # oltre: la qualità dal CRM non arriva più, rosso
+  quota_conversioni_non_lead_giallo_pct: 5        # conversioni contate che non sono lead
+  quota_conversioni_non_lead_rosso_pct: 30
+  calo_tasso_qualificati_rosso_pct: 30            # contratti / lead (export CRM) o qualificati / lead (offline), recente vs prima
+  # Nel CRM la fase è quella attuale: i lead recenti sono ancora aperti. La qualità si confronta
+  # solo su lead "maturi" e su finestre lunghe (i contratti sono pochi).
+  qualita_giorni_maturazione: 30
+  qualita_finestra_giorni: 30
+  qualita_confronto_giorni: 90
+  qualita_min_lead: 50
+  causa_quota_conversioni_min_pct: 50             # un oggetto in pausa "spiega" il crollo se portava almeno metà delle conversioni
+  scarto_offline_vs_crm_giallo_pct: 20            # qualificati nel CRM non caricati sulla piattaforma
   copertura_capi_min_pct: 80
   calo_consenso_alert_punti: 10
   customer_match_max_giorni: 30
@@ -25,10 +43,30 @@ creativita_semaforo:          # confronto di ogni concept con i suoi primi 7 gio
     cpa_oltre_target_pct: 20
     giorni_consecutivi: 3
   nota: "CPM in salita con CTR stabile = asta/stagionalità, non affaticamento"
+  frequenza_max_7g: 3            # oltre: prepara il cambio anche se il CTR regge (confermato 2026-11-22)
+  salita_pct: 10                 # "in salita" = ultimi 7 giorni oltre il 10% sopra il periodo di confronto
+  impressioni_min_finestra: 1000 # sotto, CTR troppo rumoroso: "dati insufficienti"
+  attivo_se_spesa_ultimi_giorni: 3
 
 creativita_diversita:
   concept_min_per_campagna: 6
+  angoli_min_per_campagna: 3     # concept diversi con lo stesso messaggio non sono diversità
+  formati_min_per_campagna: 2
   quota_spesa_max_singolo_concept_pct: 50
+
+selezione:                       # passo 2 della pipeline: quali campagne guardare (docs/pipeline.md)
+  tolleranza_target_pct: 10      # sotto target se il CPA supera il target di oltre il 10%
+  quota_persa_budget_min_pct: 20 # opportunità di scala: in target e perde almeno il 20% per budget
+  spesa_min: 300                 # sotto questa spesa nella finestra la campagna non si guarda
+  frequenza_max_mese: 6          # frequenza sulla finestra di 30 giorni oltre cui segnalare (bozza)
+  passo_budget_pct: 20           # effetto atteso calcolato su un aumento di budget consentito (regola budget_giornaliero)
+
+campagne:                        # giudizio delle campagne contro i KPI dello specialist
+  lead_min: 30                   # sotto, troppo pochi lead per giudicare la campagna
+  quota_spesa_min_pct: 10        # pesa almeno il 10% della spesa: vale la pena segnalarla
+  tolleranza_kpi_pct: 10         # si segnala quando supera il KPI di oltre il 10% (confermato 2026-11-22)
+  tolleranza_volume_pct: 10      # lead del mese sotto il volume richiesto di oltre il 10%
+  utm_non_abbinati_min_lead: 50  # lead con UTM di campagne non presenti nel periodo: solo informazione (campagne chiuse o rinominate)
 
 google:
   impression_share_persa_budget_alert_pct: 20

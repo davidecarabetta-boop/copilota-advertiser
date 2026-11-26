@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Stato del tracciamento · {{ slug | upper }}{% endblock %}
+{% macro tri(name, value) -%}
+<select name="{{ name }}">
+  <option value="" {% if value is none %}selected{% endif %}>non so</option>
+  <option value="si" {% if value is sameas true %}selected{% endif %}>sì</option>
+  <option value="no" {% if value is sameas false %}selected{% endif %}>no</option>
+</select>
+{%- endmacro %}
+{% block body %}
+<p><a href="/c/{{ slug }}">← Torna a {{ client }}</a></p>
+<form method="post" style="display:grid;gap:16px">
+  <section class="card"><h2>Stato del tracciamento · {{ client }}</h2><p class="muted">Solo fatti verificati: "non so" e campo vuoto vogliono dire "da verificare".</p></section>
+  {% for it in items %}{% set a = it.a %}{% set t = it.t %}{% set p = a.account_id ~ '__' %}
+  <section class="card">
+    <h2>{{ a.platform | capitalize }} · {{ a.name }}</h2>
+    <div class="form-grid">
+      {% if a.platform == 'google' %}
+      <label>Enhanced Conversions attive {{ tri(p ~ 'enhanced_conversions', t.enhanced_conversions) }}</label>
+      <label>Consent Mode v2 {{ tri(p ~ 'consent_mode_v2', t.consent_mode_v2) }}</label>
+      <label>Tasso di consenso oggi (%) <input name="{{ p }}consent_rate_pct" inputmode="decimal" value="{{ t.consent_rate_pct if t.consent_rate_pct is not none else '' }}"></label>
+      <label>Tasso di consenso prima (%) <input name="{{ p }}consent_rate_prev_pct" inputmode="decimal" value="{{ t.consent_rate_prev_pct if t.consent_rate_prev_pct is not none else '' }}"></label>
+      {% else %}
+      <label>Conversions API attiva {{ tri(p ~ 'capi_active', t.capi_active) }}</label>
+      <label>Copertura CAPI (%) <input name="{{ p }}capi_coverage_pct" inputmode="decimal" value="{{ t.capi_coverage_pct if t.capi_coverage_pct is not none else '' }}"></label>
+      {% endif %}
+      <label>Conversione di ottimizzazione <input name="{{ p }}optimization_event" value="{{ t.optimization_event or '' }}"></label>
+      <label>La qualità dei lead torna dal CRM {{ tri(p ~ 'crm_quality_feedback', t.crm_quality_feedback) }}</label>
+      <label>Ultimo caricamento offline dal CRM <input type="date" name="{{ p }}crm_last_upload" value="{{ t.crm_last_upload or '' }}"></label>
+      <label>Ultimo aggiornamento pubblico clienti <input type="date" name="{{ p }}customer_match_updated" value="{{ t.customer_match_updated or '' }}"></label>
+    </div>
+  </section>
+  {% endfor %}
+  <div><button class="btn primary" type="submit">Salva</button></div>
+</form>
+{% endblock %}

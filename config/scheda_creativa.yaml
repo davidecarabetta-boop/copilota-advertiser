@@ -1,0 +1,179 @@
+# Scheda creativa: come Claude guarda una singola creatività (immagine statica) e cosa scrive.
+# Fonte unica: la skill la usa per compilare le schede, il codice per validarle e mostrarle.
+# Le schede compilate stanno in data/<cliente>/schede_creative/<creative_id>.yaml.
+#
+# Impianto: i controlli seguono il metodo ABCD di Google (Attention, Branding, Connection,
+# Direction), validato da Kantar sui risultati, adattato all'immagine statica (le linee guida
+# sull'audio e sul ritmo del video non si applicano). Branding è completato dagli asset distintivi
+# di Ehrenberg-Bass. Il gruppo "SearchOn" contiene controlli di settore che non vengono da un
+# metodo pubblicato: sono regole nostre, da validare con il senior e poi sui dati.
+# Stato: impianto ABCD adottato il 2026-11-25; adattamento alle statiche e gruppo SearchOn da validare.
+
+fonti:
+  abcd:
+    nome: Google ABCD (Attention, Branding, Connection, Direction)
+    riferimento: "Google Ads Help, «About the ABCDs of effective video ads» (support.google.com/google-ads/answer/14783551)"
+    evidenza: >-
+      Google/Kantar, «The Short & the Long of ABCDs Effectiveness», 2021: fino al 30% in più di
+      probabilità di vendita nel breve periodo e 17% di contributo al marchio nel lungo, per gli
+      annunci che seguono le linee guida. Kantar ha analizzato oltre 11.000 annunci con Link AI.
+      È una correlazione su annunci video, non una garanzia di risultato.
+  meta:
+    nome: Indicazioni creative di Meta per il feed
+    riferimento: "Meta Business Help Center, buone pratiche per le inserzioni con immagine"
+    evidenza: >-
+      Regole della piattaforma, non uno studio indipendente: pensare per il telefono, poco testo
+      nell'immagine (la vecchia regola del 20% non c'è più, ma il consiglio resta).
+  ehrenberg_bass:
+    nome: Asset distintivi del marchio (Ehrenberg-Bass Institute, J. Romaniuk)
+    riferimento: "J. Romaniuk, «Building Distinctive Brand Assets», Oxford University Press, 2018"
+    evidenza: >-
+      Ricerca accademica: gli elementi diversi dal nome (colori, forme, personaggi) fanno
+      riconoscere il marchio se sono usati con costanza e sono propri del marchio.
+  searchon:
+    nome: Regole SearchOn per il settore
+    riferimento: config/scheda_creativa.yaml
+    evidenza: Nessuna ancora. Da validare con il senior e sui dati (vedi `validazione`).
+
+gruppi:
+  - {id: A, nome: Attention, domanda: "L'immagine si fa notare nel feed?"}
+  - {id: B, nome: Branding, domanda: "Si capisce subito di chi è e che prodotto è?"}
+  - {id: C, nome: Connection, domanda: "Il messaggio arriva e coinvolge?"}
+  - {id: D, nome: Direction, domanda: "Dice cosa fare dopo?"}
+  - {id: S, nome: Regole SearchOn, domanda: "Controlli di settore, da validare"}
+
+# Campi a valori chiusi: descrivono la creatività per sommare e confrontare (non sono giudizi).
+campi:
+  leva:                 # il messaggio principale
+    - prezzo_modello    # "a partire da X €" su un prodotto preciso
+    - rata
+    - sconto_importo    # "-2.500 €", "fino a 1.000 € di vantaggi"
+    - regalo            # buono carburante, accessori
+    - promo_servizio    # officina, noleggio, servizio con prezzo
+    - disponibilita     # pronta consegna, stock
+    - garanzia_servizio
+    - prova_sociale
+    - brand
+  soggetto:
+    - prodotto_singolo
+    - gruppo_prodotti
+    - persone
+    - servizio
+    - solo_testo
+  formato: ["1:1", "4:5", "9:16", "1.91:1"]
+  palette: [chiara, colorata, scura]
+  densita_testo: [bassa, media, alta]   # bassa: titolo e CTA; alta: tre o più blocchi di testo
+  # campi sì/no
+  persone_in_immagine: bool
+  prezzo_in_immagine: bool
+  condizioni_in_immagine: bool          # nota legale o condizioni dell'offerta
+  cta_in_immagine: bool
+
+# Controlli che Claude fa guardando l'immagine. Esito: ok, attenzione, problema.
+# Ogni esito diverso da ok ha una nota di una frase che dice cosa si vede.
+# Tutti i controlli vanno compilati in ogni scheda.
+controlli:
+  # ---------- A · Attention ----------
+  - id: contrasto
+    gruppo: A
+    fonte: abcd
+    linea_guida: Keep visuals bright and high-contrast
+    domanda: Immagine luminosa e contrastata, con il soggetto che si stacca dallo sfondo?
+    perche: Nel feed un'immagine spenta o con soggetto e sfondo dello stesso colore non ferma lo scorrimento.
+  - id: leggibile_su_telefono
+    gruppo: A
+    fonte: abcd
+    linea_guida: Keep visuals bright and high-contrast (ottimizzare per tutti i dispositivi); Meta, pensare per il telefono
+    domanda: Offerta e testi si leggono anche in miniatura sul telefono?
+    perche: Quasi tutti vedono l'annuncio sul telefono, dove l'immagine è piccola.
+  - id: testo_essenziale
+    gruppo: A
+    fonte: meta
+    linea_guida: Poco testo nell'immagine
+    domanda: Il testo nell'immagine è ridotto all'essenziale (titolo, offerta, CTA)?
+    perche: Molti blocchi di testo si leggono male sul telefono e nessuno arriva.
+  # ---------- B · Branding ----------
+  - id: marchio_visibile
+    gruppo: B
+    fonte: abcd
+    linea_guida: Show up early and throughout
+    domanda: Il marchio si riconosce subito, anche in miniatura?
+    perche: Se non si capisce chi fa l'offerta, il ricordo va al prodotto o a un concorrente.
+  - id: prodotto_riconoscibile
+    gruppo: B
+    fonte: abcd
+    linea_guida: Show up early and throughout (il marchio o il prodotto dall'inizio)
+    domanda: Il prodotto e il suo nome si leggono senza ambiguità?
+    perche: Un nome spezzato o troncato può far pensare a un altro modello o a un'altra offerta.
+  - id: asset_distintivi
+    gruppo: B
+    fonte: abcd
+    linea_guida: Draw on all your branding assets; Ehrenberg-Bass, asset distintivi
+    domanda: Usa elementi propri del marchio oltre al logo (colori, template, dettagli) e in modo costante?
+    perche: Gli elementi usati sempre allo stesso modo fanno riconoscere il marchio anche senza leggere il nome.
+  # ---------- C · Connection ----------
+  - id: messaggio_unico
+    gruppo: C
+    fonte: abcd
+    linea_guida: Focus the message
+    domanda: C'è un solo messaggio principale, capibile in 2 secondi?
+    perche: Tre offerte insieme non se ne legge nessuna.
+  - id: persone
+    gruppo: C
+    fonte: abcd
+    linea_guida: Humanize the story
+    domanda: Ci sono persone, o un uso reale del prodotto, che aiutano a immedesimarsi?
+    perche: ABCD indica le persone come leva di connessione. Se mancano non è un errore, è un test da proporre.
+  - id: coinvolge
+    gruppo: C
+    fonte: abcd
+    linea_guida: Engage
+    domanda: C'è un elemento che incuriosisce o tocca un bisogno, oltre al prezzo?
+    perche: Un beneficio concreto o una situazione riconoscibile danno un motivo in più per guardare.
+  # ---------- D · Direction ----------
+  - id: cta
+    gruppo: D
+    fonte: abcd
+    linea_guida: Include a call to action (CTA)
+    domanda: C'è una CTA che dice cosa fare, coerente con l'obiettivo (lead) e senza urgenza senza motivo?
+    perche: Una CTA chiara porta il click giusto; un'urgenza senza scadenza abbassa la fiducia.
+  # ---------- S · Regole SearchOn (da validare) ----------
+  - id: tipo_di_offerta
+    gruppo: S
+    fonte: searchon
+    domanda: Si capisce che cosa si compra (nuovo, km 0, usato, noleggio, servizio)?
+    perche: È la prima domanda di chi compra e cambia il valore del prezzo.
+  - id: motivo_per_scegliere_noi
+    gruppo: S
+    fonte: searchon
+    domanda: C'è un motivo concreto per scegliere questo venditore (consegna, garanzia, permuta, servizio)?
+    perche: Gli slogan sul prodotto li ha anche la concorrenza.
+  - id: testo_coerente
+    gruppo: S
+    fonte: searchon
+    domanda: Immagine, titolo e testo dell'annuncio dicono la stessa cosa?
+    perche: Se il testo promette una cosa e l'immagine un'altra, chi arriva si sente preso in giro e il lead si perde.
+  - id: condizioni
+    gruppo: S
+    fonte: searchon
+    domanda: Se c'è un prezzo o uno sconto, ci sono le condizioni dove servono?
+    perche: Prezzi "a partire da" e sconti vincolati senza condizioni sono un rischio. Lo verifica chi segue la parte legale.
+
+# Proposte di test: una sola modifica alla volta, stesso template, stesso ad set.
+test:
+  max_per_scheda: 3
+  regola: Ogni test cambia un solo elemento rispetto all'originale, così si capisce cosa ha fatto la differenza.
+
+# Lettura dei numeri accanto alla scheda
+numeri:
+  impressioni_min: 2000     # sotto questa soglia i numeri non si mostrano come giudizio
+  lead_min: 5               # sotto questa soglia il costo per lead si mostra come "pochi dati"
+
+# Come si valida la scheda sui dati del cliente (da fare quando ci sono abbastanza schede).
+validazione:
+  schede_min: 30            # sotto questo numero non si confronta
+  metodo: >-
+    Per ogni controllo, confrontare il costo per lead (e per lead in trattativa, dal CRM) delle
+    creatività con esito ok contro quelle con attenzione o problema, nella stessa campagna.
+    Un controllo che non separa le creatività migliori dalle peggiori va rivisto o tolto.
+    I controlli SearchOn restano "da validare" finché non passano questa prova.

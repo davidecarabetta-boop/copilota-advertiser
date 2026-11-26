@@ -35,7 +35,8 @@ Interfaccia, hook e skill leggono **questi file**. Nessuna regola duplicata nel 
 ## Architettura
 - **Lettura e scrittura sulle piattaforme**: MCP ufficiali Google Ads e Meta Ads, usati da Claude Code.
 - **Guardrail**: hook `PreToolUse` / `PostToolUse` di Claude Code, distribuiti come impostazioni gestite, che applicano `regole.yaml` a ogni strumento di scrittura degli MCP e registrano ogni modifica. Valgono solo in Claude Code: i connettori in scrittura non vanno abilitati agli advertiser altrove.
-- **Storico e calcoli**: estrazione notturna via API in BigQuery (fase 01), su cui girano segnali, analisi, semaforo e briefing.
+- **Fonte dei dati: prima Ads Guardian.** Se un dato c'è in Ads Guardian (costi, conversioni e valore di piattaforma, CPA/ROAS, target, budget, pacing, quote perse…) si prende **sempre** da lì, anche se il Copilota potrebbe leggerlo dalle piattaforme. Il Copilota estrae o calcola solo ciò che Ads Guardian non ha (qualità dal CRM, cronologia delle modifiche, creatività, apprendimento e test). Quando Ads Guardian aggiunge un dato, il Copilota smette di calcolarlo. Gli MCP servono alla diagnosi sulle campagne selezionate, non a rifare la fotografia.
+- **Storico e calcoli**: estrazione notturna via API in BigQuery (fase 01), solo per i dati che Ads Guardian non ha, su cui girano segnali, analisi, semaforo e briefing.
 - **Interfaccia web** in sola lettura e **MCP del Copilota** (piccolo, sola lettura) per portare briefing e diagnosi in chat.
 
 ## Fasi
