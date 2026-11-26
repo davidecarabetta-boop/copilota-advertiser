@@ -94,7 +94,7 @@
       <td class="num">{{ r.leads }}</td><td class="num">{{ r.qualified }}</td><td class="num">{{ r.contracts }}</td>
       <td class="num">{{ eur(r.cost_per_lead) }}{% if r.kpi and r.kpi.cost_per_lead %}<br><small class="muted">KPI {{ eur(r.kpi.cost_per_lead) }}</small>{% endif %}</td>
       <td class="num">{{ eur(r.cost_per_qualified) }}{% if r.kpi and r.kpi.cost_per_qualified %}<br><small class="muted">KPI {{ eur(r.kpi.cost_per_qualified) }}</small>{% endif %}</td>
-      <td class="num">{{ eur(r.cost_per_contract) }}{% if r.kpi and r.kpi.cost_per_contract %}<br><small class="muted">KPI {{ eur(r.kpi.cost_per_contract) }}</small>{% endif %}</td>
+      <td class="num">{{ eur(r.cost_per_contract) }}</td>
     </tr>{% endfor %}</tbody>
   </table></div>
   {% set no_leads = campaigns.rows | rejectattr('leads') | list %}

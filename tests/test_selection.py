@@ -53,10 +53,17 @@ def test_selection_orders_by_impact_and_finds_scale_opportunities():
 
 
 def test_specialist_kpi_gives_a_target_when_platform_has_none():
-    kpis = {("google", "AUTO_B2C"): {"cost_per_lead": 10.0}}
+    kpis = {("google", "AUTO_B2C"): {"target_cpa": 10.0}}
     r = select(source(), ACC, TH, kpis)
     d = next(c for c in r["below"] if c["campaign_id"] == "4")  # CPA 14.8 > 10
     assert d["target_origin"] == "KPI dello specialist"
+
+
+def test_business_kpi_is_not_a_platform_target():
+    # il costo per lead del CRM (livello business) non diventa il target del CPA di piattaforma
+    kpis = {("google", "AUTO_B2C"): {"cost_per_lead": 10.0, "cost_per_qualified": 100.0}}
+    r = select(source(), ACC, TH, kpis)
+    assert "4" not in [c["campaign_id"] for c in r["below"]]
 
 
 def test_diagnosis_follows_campaign_type():

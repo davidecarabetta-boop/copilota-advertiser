@@ -665,8 +665,8 @@ def rules_page(request: Request):
 
 # ---------- KPI dello specialist ----------
 
-KPI_FIELDS = ["cost_per_lead", "cost_per_qualified", "cost_per_contract", "leads_per_month",
-              "monthly_budget"]
+KPI_FIELDS = ["target_cpa", "cost_per_lead", "cost_per_qualified", "cost_per_contract",
+              "leads_per_month", "monthly_budget"]
 
 
 def _lines_in_data(source) -> list[tuple[str, str]]:

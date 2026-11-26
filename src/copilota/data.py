@@ -101,9 +101,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "pipeline": str, "step": _opt(int), "depends": str, "executor": str,
         "start": _opt(date.fromisoformat),
     },
-    # KPI dello specialist per piattaforma e linea di business (es. meta / AUTO_B2C)
+    # KPI dello specialist per piattaforma e linea di business (es. meta / AUTO_B2C), su due
+    # livelli: adv (target_cpa, confrontato col CPA di piattaforma) e business (costi dal CRM)
     "kpi": {
-        "platform": str, "line": str, "cost_per_lead": _opt(float),
+        "platform": str, "line": str, "target_cpa": _opt(float), "cost_per_lead": _opt(float),
         "cost_per_qualified": _opt(float), "cost_per_contract": _opt(float),
         "leads_per_month": _opt(float), "monthly_budget": _opt(float),
     },

@@ -1,7 +1,8 @@
 """Selezione (passo 2 della pipeline, docs/pipeline.md): quali campagne guardare oggi.
 
-Legge solo la fotografia `campaign_snapshot` (finestra assestata). Il target viene, in ordine,
-dalla fotografia (Ads Guardian o piattaforma) o dai KPI dello specialist per piattaforma e linea.
+Legge solo la fotografia `campaign_snapshot` (finestra assestata). È il livello adv: il target
+viene, in ordine, dalla fotografia (Ads Guardian o piattaforma) o dal `target_cpa` dei KPI dello
+specialist per piattaforma e linea.
 """
 
 from copilota.data import DataSource, Row
@@ -19,8 +20,10 @@ def _target(c: Row, kpis: dict) -> tuple[float | None, str]:
     if c["target_cpa"]:
         return c["target_cpa"], c["target_source"] or "piattaforma"
     k = kpis.get((c["platform"], line_of(c["campaign_name"])))
-    if k and k.get("cost_per_lead"):
-        return k["cost_per_lead"], "KPI dello specialist"
+    # Livello adv: solo il target di piattaforma. I costi dal CRM (livello business) contano
+    # lead diversi da quelli della piattaforma e non si confrontano col CPA.
+    if k and k.get("target_cpa"):
+        return k["target_cpa"], "KPI dello specialist"
     return None, ""
 
 

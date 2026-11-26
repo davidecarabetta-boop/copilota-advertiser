@@ -5,14 +5,19 @@
 <section class="card">
   <h2>KPI dello specialist · {{ client }}</h2>
   <p>I KPI li decide lo specialist, per piattaforma e linea di business. Il Copilota confronta le campagne con questi valori: se una campagna li supera, lo segnala allo specialist con i numeri. Il budget lo decide lo specialist.</p>
-  <p class="muted">Lascia vuoto quello che non usi. I costi in euro. "Lead" e "lead qualificati" sono quelli del CRM, sui lead di almeno 30 giorni. Il volume di lead al mese si confronta con i lead contati dalla piattaforma negli ultimi 30 giorni.</p>
+  <p class="muted">Lascia vuoto quello che non usi. I costi in euro. Due livelli:</p>
+  <ul class="muted">
+    <li><b>Adv</b>: il target CPA si confronta con il costo per conversione della piattaforma. Se c'è un target in Ads Guardian, vale quello.</li>
+    <li><b>Business</b>: costo per lead e per lead qualificato sono calcolati sui lead del CRM di almeno 30 giorni e giudicano le singole campagne. Il costo per contratto vale per la linea intera, non per la campagna: il CRM collega a un lead solo una parte delle vendite.</li>
+  </ul>
+  <p class="muted">Il volume di lead al mese si confronta con i lead contati dalla piattaforma negli ultimi 30 giorni.</p>
   <form method="post">
     <div class="tablewrap"><table>
-      <thead><tr><th>Piattaforma</th><th>Linea</th><th>Costo per lead</th><th>Costo per lead qualificato</th><th>Costo per contratto</th><th>Lead al mese</th><th>Budget al mese</th></tr></thead>
+      <thead><tr><th>Piattaforma</th><th>Linea</th><th>Target CPA (adv)</th><th>Costo per lead CRM</th><th>Costo per lead qualificato</th><th>Costo per contratto (linea)</th><th>Lead al mese</th><th>Budget al mese</th></tr></thead>
       <tbody>{% for r in rows %}{% set k = r.platform ~ '|' ~ r.line %}<tr>
         <td>{{ 'Google Ads' if r.platform == 'google' else 'Meta Ads' }}<input type="hidden" name="key" value="{{ k }}"></td>
         <td>{{ r.line }}</td>
-        {% for f in ['cost_per_lead','cost_per_qualified','cost_per_contract','leads_per_month','monthly_budget'] %}
+        {% for f in ['target_cpa','cost_per_lead','cost_per_qualified','cost_per_contract','leads_per_month','monthly_budget'] %}
         <td><input type="number" step="any" min="0" name="{{ k }}__{{ f }}" value="{{ r[f] if r[f] is not none else '' }}" style="width:110px" aria-label="{{ f }} {{ r.platform }} {{ r.line }}"></td>
         {% endfor %}
       </tr>{% endfor %}</tbody>

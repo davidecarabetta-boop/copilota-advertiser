@@ -86,10 +86,12 @@ def campaign_quality(source: DataSource, account: Row) -> dict | None:
     }
 
 
-KPI_FIELDS = {  # metrica della campagna -> KPI dello specialist, con etichetta leggibile
+# Livello business: metrica della campagna dal CRM -> KPI dello specialist, con etichetta.
+# Il costo per contratto non giudica la singola campagna: il CRM collega a un lead web solo una
+# parte delle vendite, quindi per campagna esce gonfiato. Il KPI resta per la linea intera.
+KPI_FIELDS = {
     "cost_per_lead": ("cost_per_lead", "costo per lead"),
     "cost_per_qualified": ("cost_per_qualified", "costo per lead qualificato"),
-    "cost_per_contract": ("cost_per_contract", "costo per contratto"),
 }
 
 

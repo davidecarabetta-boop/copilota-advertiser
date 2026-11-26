@@ -104,3 +104,10 @@ def test_reactivation_of_out_of_kpi_campaign_is_a_senior_decision():
     assert plan.tasks[0].title.startswith("Prima di riattivare «BROAD» decidi col senior")
     assert plan.tasks[0].level == "serve_senior"
     assert not any(t.title.startswith("Sposta budget") for t in plan.tasks)
+
+
+def test_contract_kpi_does_not_judge_single_campaigns():
+    from copilota.campaigns import KPI_FIELDS
+    # il CRM collega a un lead solo una parte delle vendite: per campagna il costo per
+    # contratto esce gonfiato, quindi vale solo per la linea
+    assert "cost_per_contract" not in KPI_FIELDS
