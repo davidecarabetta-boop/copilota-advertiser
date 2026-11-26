@@ -20,6 +20,12 @@
   </label>
   {% if al %}<input type="hidden" name="al" value="{{ al }}">{% endif %}
   <noscript><button class="btn" type="submit">Mostra</button></noscript>
+  {% if tab in ('campagne', 'business') %}{% set q = '?account=' ~ account.account_id ~ ('&al=' ~ al if al else '') %}
+  <nav class="switch" aria-label="Livello">
+    <a href="/c/{{ slug }}/campagne{{ q }}" {% if tab == 'campagne' %}aria-current="page"{% endif %}><b>Adv</b><span>piattaforma contro il target</span></a>
+    <a href="/c/{{ slug }}/business{{ q }}" {% if tab == 'business' %}aria-current="page"{% endif %}><b>Business</b><span>CRM contro i KPI</span></a>
+  </nav>
+  {% endif %}
 </form>
 
 {% if msg %}<p class="alertline" role="status"><span class="sev info"></span>{{ msg }}</p>{% endif %}

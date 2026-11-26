@@ -35,6 +35,10 @@ def test_pages_render(client):
     business = c.get("/c/demo/business?account=1000000001").text
     assert "Campagne · Adv" in adv and "Qualità dei lead, dal CRM" not in adv
     assert "Campagne · Business" in business and "Rispetto al target" not in business
+    for page_ in (adv, business):  # interruttore tra i due livelli, stesso account
+        assert 'class="switch"' in page_
+        assert "/c/demo/business?account=1000000001" in page_
+        assert "/c/demo/campagne?account=1000000001" in page_
     past = c.get("/a/demo/1000000001?tab=segnali&al=2026-11-10").text
     assert "stai guardando il 2026-11-10" in past and "Il 10/11" in past and "Il 21/11" not in past
     assert c.get("/a/demo/nessuno").status_code == 404
